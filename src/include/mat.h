@@ -14,37 +14,37 @@
 
 template<typename T, uint32_t row_size, uint32_t col_size>
 class mat {
-    typedef vec<T,row_size> ROW_TYPE;
+    typedef vec<T,row_size> COL_TYPE;
     typedef mat<T,row_size,col_size> MAT_TYPE;
 
 private:
-    std::array<vec<T,col_size>,row_size> data;
+    std::array<COL_TYPE,col_size> data;
 
-    static ROW_TYPE _add_op(const ROW_TYPE& a, const ROW_TYPE& b){
+    static COL_TYPE _add_op(const COL_TYPE& a, const COL_TYPE& b){
         return a + b;
     }
 
-    static ROW_TYPE _sub_op(const ROW_TYPE& a, const ROW_TYPE& b){
+    static COL_TYPE _sub_op(const COL_TYPE& a, const COL_TYPE& b){
         return a - b;
     }
 
-    static ROW_TYPE _mul_op(const ROW_TYPE& a, const ROW_TYPE& b){
+    static COL_TYPE _mul_op(const COL_TYPE& a, const COL_TYPE& b){
         return a * b;
     }
 
-    static ROW_TYPE _div_op(const ROW_TYPE& a, const ROW_TYPE& b){
+    static COL_TYPE _div_op(const COL_TYPE& a, const COL_TYPE& b){
         return a / b;
     }
 
-    void _apply_op(const MAT_TYPE& m, std::function<ROW_TYPE(ROW_TYPE, ROW_TYPE)> op){
-        for (size_t i = 0; i < row_size; ++i) {
+    void _apply_op(const MAT_TYPE& m, std::function<COL_TYPE(COL_TYPE, COL_TYPE)> op){
+        for (size_t i = 0; i < col_size; ++i) {
             data[i] = op(data[i], m[i]);
         }
     }
 
-    void _apply_op(T s, std::function<ROW_TYPE(ROW_TYPE, ROW_TYPE)> op){
-        ROW_TYPE r = ROW_TYPE(s);
-        for (size_t i = 0; i < row_size; ++i) {
+    void _apply_op(T s, std::function<COL_TYPE(COL_TYPE, COL_TYPE)> op){
+        COL_TYPE r = COL_TYPE(s);
+        for (size_t i = 0; i < col_size; ++i) {
             data[i] = op(data[i], r);
         }
     }
@@ -72,27 +72,27 @@ public:
         }
     }
 
-    mat(const vec<T,col_size> v1,
-        const vec<T,col_size> v2) {
-        assert(row_size == 4);
+    mat(const COL_TYPE v1,
+        const COL_TYPE v2) {
+        assert(col_size == 2);
         data[0] = v1;
         data[1] = v2;
     }
 
-    mat(const vec<T,col_size> v1,
-        const vec<T,col_size> v2,
-        const vec<T,col_size> v3) {
-        assert(row_size == 3);
+    mat(const COL_TYPE v1,
+        const COL_TYPE v2,
+        const COL_TYPE v3) {
+        assert(col_size == 3);
         data[0] = v1;
         data[1] = v2;
         data[2] = v3;
     }
 
-    mat(const vec<T,col_size> v1,
-        const vec<T,col_size> v2,
-        const vec<T,col_size> v3,
-        const vec<T,col_size> v4) {
-        assert(row_size == 4);
+    mat(const COL_TYPE v1,
+        const COL_TYPE v2,
+        const COL_TYPE v3,
+        const COL_TYPE v4) {
+        assert(col_size == 4);
         data[0] = v1;
         data[1] = v2;
         data[2] = v3;
@@ -133,12 +133,12 @@ public:
     mat& operator=(const mat&) = default;
     ~mat() = default;
 
-    ROW_TYPE& operator[](uint32_t idx) {
+    COL_TYPE& operator[](uint32_t idx) {
         assert(idx < col_size);
         return data[idx];
     }
 
-    ROW_TYPE operator[](uint32_t idx) const {
+    COL_TYPE operator[](uint32_t idx) const {
         assert(idx < col_size);
         return data[idx];
     }
@@ -194,7 +194,7 @@ public:
         for(size_t i=0; i<row_size; ++i){
             for(size_t j=0; j<m_col_size; ++j){
                 for(size_t k=0; k<col_size; ++k) {
-                    r[i][j] += data[i][k] * m[k][j];
+                    r[j][i] += data[k][i] * m[j][k];
                 }
             }
         }
@@ -205,7 +205,7 @@ public:
         vec<T,row_size> r = vec<T,row_size>();
         for(size_t i=0; i<row_size; ++i){
             for(size_t j=0; j<col_size; ++j){
-                r[i] += data[i][j] * v[j];
+                r[i] += data[j][i] * v[j];
             }
         }
         return r;
@@ -213,8 +213,8 @@ public:
 
     std::string as_string() const {
         std::string str = "";
-        for(size_t i=0; i<row_size; ++i){
-            for(size_t j=0; j<col_size; ++j){
+        for(size_t i=0; i<col_size; ++i){
+            for(size_t j=0; j<row_size; ++j){
                 str += std::to_string(data[i][j]) + ", ";
             }
             str += "\n";
