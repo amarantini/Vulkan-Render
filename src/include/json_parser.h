@@ -8,7 +8,8 @@
 #ifndef json_parser_h
 #define json_parser_h
 
-#include <_ctype.h>
+#include <cstdint>
+#include <cstdlib>
 #include <cassert>
 #include <exception>
 #include <fstream>

@@ -18,7 +18,7 @@ class vec {
 private:
     typedef T DATA_TYPE;
     typedef vec<T,size> VEC_TYPE;
-    uint32_t SIZE = size;
+    // uint32_t size = size;
     std::array<T, size> data;
 
     static T _add_op(const T& a, const T& b){
@@ -38,45 +38,45 @@ private:
     }
 
     void _apply_op(const vec<T,size>& v, std::function<T(T, T)> op){
-        for (size_t i = 0; i < SIZE; ++i) {
+        for (size_t i = 0; i < size; ++i) {
             data[i] = op(data[i], v[i]);
         }
     }
 
     void _apply_op(T s, std::function<T(T, T)> op){
-        for (size_t i = 0; i < SIZE; ++i) {
+        for (size_t i = 0; i < size; ++i) {
             data[i] = op(data[i], s);
         }
     }
 
 public:
     vec() {
-        for(size_t i=0; i<SIZE; i++){
+        for(size_t i=0; i<size; i++){
             data[i] = T(0);
         }
     }
 
     vec(T _x){
-        for(size_t i=0; i<SIZE; i++){
+        for(size_t i=0; i<size; i++){
             data[i] = _x;
         }
     }
 
     vec(T _x, T _y){
-        assert(SIZE == 2);
+        assert(size == 2);
         data[0] = _x;
         data[1] = _y;
     }
 
     vec(T _x, T _y, T _z){
-        assert(SIZE == 3);
+        assert(size == 3);
         data[0] = _x;
         data[1] = _y;
         data[2] = _z;
     }
 
     vec(T _x, T _y, T _z, T _w){
-        assert(SIZE == 4);
+        assert(size == 4);
         data[0] = _x;
         data[1] = _y;
         data[2] = _z;
@@ -84,21 +84,21 @@ public:
     }
 
     vec(vec<T,2> v, T _z){
-        assert(SIZE==3);
+        assert(size==3);
         data[0] = v[0];
         data[1] = v[1];
         data[2] = _z;
     }
 
     vec(T _x, vec<T,2> v){
-        assert(SIZE==3);
+        assert(size==3);
         data[0] = _x;
         data[1] = v[0];
         data[2] = v[1];
     }
 
     vec(vec<T,3> v, T _z){
-        assert(SIZE==4);
+        assert(size==4);
         data[0] = v[0];
         data[1] = v[1];
         data[2] = v[2];
@@ -106,7 +106,7 @@ public:
     }
 
     vec(T _x, vec<T,3> v){
-        assert(SIZE==4);
+        assert(size==4);
         data[0] = _x;
         data[1] = v[0];
         data[2] = v[1];
@@ -114,15 +114,15 @@ public:
     }
 
     vec(std::vector<T> vec){
-        assert(SIZE==vec.size());
-        for(size_t i=0; i<SIZE; i++){
+        assert(size==vec.size());
+        for(size_t i=0; i<size; i++){
             data[i] = vec[i];
         }
     }
 
     vec(std::vector<double> vec){
-        assert(SIZE==vec.size());
-        for(size_t i=0; i<SIZE; i++){
+        assert(size==vec.size());
+        for(size_t i=0; i<size; i++){
             data[i] = static_cast<T>(vec[i]);
         }
     }
@@ -132,12 +132,12 @@ public:
     ~vec() = default;
 
     T operator[](uint32_t idx) const {
-        assert(idx < SIZE);
+        assert(idx < size);
         return data[idx];
     }
 
     T& operator[](uint32_t idx) {
-        assert(idx < SIZE);
+        assert(idx < size);
         return data[idx];
     }
 
@@ -220,12 +220,27 @@ public:
         result /= s;
         return result;
     }
+
+    T norm() const {
+        T sum = 0;
+        for(size_t i=0; i<size; i++){
+            sum += data[i]*data[i];
+        }
+        return sqrt(sum);
+    }
+
+    void normalize() {
+        T n = norm();
+        for(size_t i=0; i<size; i++){
+            data[i] /= n;
+        }
+    }
     
     std::string as_string() const {
         std::string str = "";
-        for(size_t i=0; i<SIZE; ++i){
+        for(size_t i=0; i<size; ++i){
             str += std::to_string(data[i]); 
-            if(i!=SIZE-1)
+            if(i!=size-1)
                 str += ", "; 
         }
         str += "\n";

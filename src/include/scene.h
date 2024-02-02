@@ -9,7 +9,8 @@
 #define scene_h
 
 #include <memory>
-#include <sys/_types/_size_t.h>
+#include <cstdint>
+#include <cstdlib>
 #include <unordered_map>
 #include <vector>
 #include <string>
@@ -18,9 +19,9 @@
 #include "mat.h"
 #include "json_parser.h"
 #include "math_util.h"
-// #include "vertex.hpp"
+#include "vertex.hpp"
 
-const std::string SCENE_PATH = "./scene/";
+
 
 struct Vertex {
     vec3 pos;
@@ -48,12 +49,13 @@ struct Mesh {
     std::string name;
     std::string topology;
     int count;
-    std::vector<Vertex> vertices;
+    std::string src;
+    int offset;
+    // std::vector<Vertex> vertices;
     
 
-    Mesh(std::string _name, std::string _topology, int _count, const std::string src, const int offset)
-        : name(_name), topology(_topology), count(_count) {
-            loadMesh(src, offset);
+    Mesh(std::string _name, std::string _topology, int _count, std::string _src, int _offset)
+        : name(_name), topology(_topology), count(_count), src(_src), offset(_offset) {
           }
 
     void loadMesh(const std::string src, const int offset){
@@ -80,6 +82,12 @@ struct Mesh {
         }
     }
 };
+
+struct ModelInfo {
+    UniformBufferObject ubo;
+    std::string src;
+    int offset;
+}
 
 struct Camera {
     std::shared_ptr<Transform> transform;
@@ -116,9 +124,23 @@ struct Scene {
     std::vector<std::shared_ptr<Mesh> > meshs;
     std::vector<std::shared_ptr<Driver> > drivers;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
-    
+    std::vector<ModelInfo> modelInfos;
 
-    void load_scene(const JsonList& jsonList){
+    void init(const std::string& file_path) {
+        const JsonList jsonList = parseScene(file_path);
+        loadScene(jsonList);
+        computeModelInfos();
+    }
+
+    JsonList parseScene(const std::string& file_path) {
+        JsonParser parser;
+        std::string output;
+        parser.load("./scene/sg-Articulation.s72", output);
+
+        return parser.parse(output);
+    }
+
+    void loadScene(const JsonList& jsonList){
         std::unordered_map<uint32_t,std::shared_ptr<Mesh> > idx_to_mesh;
         std::unordered_map<uint32_t,std::shared_ptr<Transform> > idx_to_trans;
         std::unordered_map<uint32_t,std::shared_ptr<Camera> > idx_to_cam;
@@ -261,6 +283,10 @@ struct Scene {
         for(int n: root_idxes){
             roots.push_back(idx_to_trans[n]);
         }
+    }
+
+    void computeModelInfos(){
+
     }
 };
 

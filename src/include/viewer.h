@@ -14,6 +14,8 @@
 //
 //  Created by qiru hu on 1/16/24.
 //
+#include "mat.h"
+#include "math_util.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -42,7 +44,7 @@
 
 #include "file.hpp"
 #include "vertex.hpp"
-//#include "math_util.h"
+#include "math_util.h"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -95,26 +97,31 @@ struct SwapChainSupportDetails {
     std::vector<VkPresentModeKHR> presentModes;
 };
 
-const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+// const std::vector<Vertex> vertices = {
+//     {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+//     {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+//     {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     // {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    // {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    // {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    // {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
     // {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
+// };
 
-const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
+// const std::vector<uint16_t> indices = {
+//     0, 1, 2, 2, 3, 0,
+//     4, 5, 6, 6, 7, 4
+// };
+
 
 
 class ViewerApplication {
 public:
+    // void setUpScene(const std::string& file_name){
+    //     scene.init(file_name);
+    // }
+
     void run(){
         initWindow();
         initVulkan();
@@ -151,7 +158,10 @@ public:
     void setHeadless(bool _headless){
         headless = _headless;
     }
+
 private:
+    // Scene scene = {};
+
     std::string physical_device_name = "None";
     int width = WIDTH;
     int height = HEIGHT;
@@ -163,10 +173,10 @@ private:
     VkDebugUtilsMessengerEXT debugMessenger;
     VkSurfaceKHR surface;
     
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device; //logical device
+    static inline VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    static inline VkDevice device = NULL; //logical device
     
-    VkQueue graphicsQueue;
+    static inline VkQueue graphicsQueue = NULL;
     VkQueue presentQueue;
     
     VkSwapchainKHR swapChain;//a queue of images that are waiting to be presented to the screen
@@ -183,7 +193,7 @@ private:
     
     std::vector<VkFramebuffer> swapChainFramebuffers;
     
-    VkCommandPool commandPool;
+    static inline VkCommandPool commandPool = NULL;
     std::vector<VkCommandBuffer> commandBuffers;
     
     std::vector<VkSemaphore> imageAvailableSemaphores;
@@ -192,11 +202,6 @@ private:
     
     bool framebufferResized = false;
     uint32_t currentFrame = 0;
-    
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    // VkBuffer indexBuffer;
-    // VkDeviceMemory indexBufferMemory;
     
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -212,6 +217,204 @@ private:
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
+
+    struct BufferHelper {
+        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, 
+                        VkMemoryPropertyFlags properties, VkBuffer& buffer, 
+                        VkDeviceMemory& bufferMemory) {
+            VkBufferCreateInfo bufferInfo{};
+            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferInfo.size = size;
+            bufferInfo.usage = usage;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create buffer!");
+            }
+
+            VkMemoryRequirements memRequirements;
+            vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = memRequirements.size;
+            allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+            if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+                throw std::runtime_error("failed to allocate buffer memory!");
+            }
+
+            vkBindBufferMemory(device, buffer, bufferMemory, 0);
+        }
+
+        void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+            VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+            
+            VkBufferCopy copyRegion{};
+            copyRegion.srcOffset = 0; // Optional
+            copyRegion.dstOffset = 0; // Optional
+            copyRegion.size = size;
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+            
+            endSingleTimeCommands(commandBuffer);
+        }
+
+        VkCommandBuffer beginSingleTimeCommands() {
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandPool = commandPool;
+            allocInfo.commandBufferCount = 1;
+
+            VkCommandBuffer commandBuffer;
+            vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+            return commandBuffer;
+        }
+
+        void endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+            vkEndCommandBuffer(commandBuffer);
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+
+            vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+            vkQueueWaitIdle(graphicsQueue);
+
+            vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        }
+        
+        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+            VkPhysicalDeviceMemoryProperties memProperties;
+            vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+            
+            for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+                if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                        return i;
+                    }
+            }
+
+            throw std::runtime_error("failed to find suitable memory type!");
+        }
+    };
+
+    BufferHelper bufferHelper {};
+
+    struct VkModel:BufferHelper {
+        // VkModel(ModelInfo& info){
+            // loadMesh(info.src, info.offset);
+        // }
+
+        // UniformBufferObject ubo; // view, proj
+        ModelPushConstant pc; //model
+        std::vector<Vertex> vertices;
+        // std::vector<uint16_t> indices
+        VkBuffer vertexBuffer;
+        VkDeviceMemory vertexBufferMemory;
+        // VkBuffer indexBuffer;
+        // VkDeviceMemory indexBufferMemory;
+
+        void cleanUp(){
+            vkDestroyBuffer(device, vertexBuffer, nullptr);
+            vkFreeMemory(device, vertexBufferMemory, nullptr);
+        }
+
+        void load(){
+            createVertexBuffer();
+            // createIndexBuffer();
+        }
+
+        void render(VkCommandBuffer& commandBuffer){
+            VkBuffer vertexBuffers[] = {vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+            // vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            // vkCmdDrawIndexed(commandBuffer,
+            //                  static_cast<uint32_t>(indices.size()),
+            //                  1,/*number of instances*/
+            //                  0,/*offset into the index buffer*/
+            //                  0,//offset to add to the indices
+            //                  0);//offset for instancing
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
+        
+        }
+
+        // void loadMesh(const std::string src, const int offset){
+        //     std::ifstream infile(SCENE_PATH+src, std::ifstream::binary);
+
+        //     infile.seekg(0, infile.end);
+        //     const size_t num_elements = infile.tellg() / 28;
+        //     infile.seekg(offset);
+            
+        //     vertices.resize(num_elements);
+        //     for(size_t i=0; i<num_elements; i++) {
+        //         Vertex& v = vertices[i];
+        //         infile.read((char*)&v.pos[0], sizeof(float));
+        //         infile.read((char*)&v.pos[1], sizeof(float));
+        //         infile.read((char*)&v.pos[2], sizeof(float));
+            
+        //         infile.read((char*)&v.normal[0], sizeof(float));
+        //         infile.read((char*)&v.normal[1], sizeof(float));
+        //         infile.read((char*)&v.normal[2], sizeof(float));
+                
+        //         infile.read((char*)&v.color[0], sizeof(uint8_t));
+        //         infile.read((char*)&v.color[1], sizeof(uint8_t));
+        //         infile.read((char*)&v.color[2], sizeof(uint8_t));
+        //     }
+        // }
+
+        void createVertexBuffer() {
+            VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+            
+            VkBuffer stagingBuffer;
+            VkDeviceMemory stagingBufferMemory;
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+            
+            void* data;
+            vkMapMemory(device, stagingBufferMemory, 0/*offset*/, bufferSize, 0/*flag*/, &data);
+            memcpy(data, vertices.data(), (size_t) bufferSize);
+            vkUnmapMemory(device, stagingBufferMemory);
+            
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+            
+            copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+            
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            vkFreeMemory(device, stagingBufferMemory, nullptr);
+        }
+
+        // void createIndexBuffer() {
+        //     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+        //     VkBuffer stagingBuffer;
+        //     VkDeviceMemory stagingBufferMemory;
+        //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        //     void* data;
+        //     vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        //     memcpy(data, indices.data(), (size_t) bufferSize);
+        //     vkUnmapMemory(device, stagingBufferMemory);
+
+        //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+
+        //     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+
+        //     vkDestroyBuffer(device, stagingBuffer, nullptr);
+        //     vkFreeMemory(device, stagingBufferMemory, nullptr);
+        // }
+    };
+
+    std::vector<VkModel> models;
+
     
     void initWindow(){
         glfwInit();
@@ -243,7 +446,9 @@ private:
         // createTextureImage();
         // createTextureImageView();
         // createTextureSampler();
-        createVertexBuffer();
+        // TODO: create models
+        createModels();
+        // createVertexBuffer();
         // createIndexBuffer();
         createUniformBuffers();
         createDescriptorPool();
@@ -276,12 +481,14 @@ private:
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
         
+        // TODO: Destroy VkModel
+        for(VkModel& model: models){
+            model.cleanUp();
+        }
         // vkDestroyBuffer(device, indexBuffer, nullptr);
         // vkFreeMemory(device, indexBufferMemory, nullptr);
-
-        
-        vkDestroyBuffer(device, vertexBuffer, nullptr);
-        vkFreeMemory(device, vertexBufferMemory, nullptr);
+        // vkDestroyBuffer(device, vertexBuffer, nullptr);
+        // vkFreeMemory(device, vertexBufferMemory, nullptr);
         
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -839,13 +1046,19 @@ private:
         colorBlending.blendConstants[1] = 0.0f; // Optional
         colorBlending.blendConstants[2] = 0.0f; // Optional
         colorBlending.blendConstants[3] = 0.0f; // Optional
+
+        //setup push constants
+        VkPushConstantRange pushConstantRange;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(ModelPushConstant);
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1; // Optional
         pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout; // Optional
-        pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-        pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+        pipelineLayoutInfo.pushConstantRangeCount = 1; // Optional
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange; // Optional
 
         if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!");
@@ -1057,20 +1270,13 @@ private:
         scissor.extent = swapChainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
         
-        VkBuffer vertexBuffers[] = {vertexBuffer};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-        
-        // vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-        // vkCmdDrawIndexed(commandBuffer,
-        //                  static_cast<uint32_t>(indices.size()),
-        //                  1,/*number of instances*/
-        //                  0,/*offset into the index buffer*/
-        //                  0,//offset to add to the indices
-        //                  0);//offset for instancing
-       vkCmdDraw(commandBuffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
         
+        for(VkModel& model: models){
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ModelPushConstant), &model.pc);
+            model.render(commandBuffer);
+        }
+       
         vkCmdEndRenderPass(commandBuffer);
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -1211,130 +1417,8 @@ private:
     }
     
     /* ---------- Vertex Buffer ---------- */
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = size;
-        bufferInfo.usage = usage;
-        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create buffer!");
-        }
-
-        VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
-
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate buffer memory!");
-        }
-
-        vkBindBufferMemory(device, buffer, bufferMemory, 0);
-    }
-    
-    void createVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-        
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-        
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0/*offset*/, bufferSize, 0/*flag*/, &data);
-        memcpy(data, vertices.data(), (size_t) bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-        
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
-        
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-        
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-    
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-        
-        VkBufferCopy copyRegion{};
-        copyRegion.srcOffset = 0; // Optional
-        copyRegion.dstOffset = 0; // Optional
-        copyRegion.size = size;
-        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-        
-        endSingleTimeCommands(commandBuffer);
-    }
-    
-    VkCommandBuffer beginSingleTimeCommands() {
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = commandPool;
-        allocInfo.commandBufferCount = 1;
-
-        VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
-
-        return commandBuffer;
-    }
-
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer) {
-        vkEndCommandBuffer(commandBuffer);
-
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-
-        vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(graphicsQueue);
-
-        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-    }
-    
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-        VkPhysicalDeviceMemoryProperties memProperties;
-        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-        
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-                    return i;
-                }
-        }
-
-        throw std::runtime_error("failed to find suitable memory type!");
-    }
     
     /* ------------- Index Buffer ------------- */
-    // void createIndexBuffer() {
-    //     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    //     VkBuffer stagingBuffer;
-    //     VkDeviceMemory stagingBufferMemory;
-    //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-    //     void* data;
-    //     vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    //     memcpy(data, indices.data(), (size_t) bufferSize);
-    //     vkUnmapMemory(device, stagingBufferMemory);
-
-    //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
-
-    //     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
-
-    //     vkDestroyBuffer(device, stagingBuffer, nullptr);
-    //     vkFreeMemory(device, stagingBufferMemory, nullptr);
-    // }
     
     /* --------------- Uniform buffers --------------- */
     void createDescriptorSetLayout() {
@@ -1376,26 +1460,26 @@ private:
         uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+            bufferHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
 
             vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
         }
     }
     
     void updateUniformBuffer(uint32_t currentImage) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
+        // static auto startTime = std::chrono::high_resolution_clock::now();
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        // auto currentTime = std::chrono::high_resolution_clock::now();
+        // float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
-        
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //eye position, center position and up axis
-        
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
-    
         ubo.proj[1][1] *= -1;
+
+        // ubo.view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
+        // ubo.proj = perspective(degToRad(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        // ubo.proj[1][1] *= -1;
         
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
@@ -1533,7 +1617,7 @@ private:
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+        allocInfo.memoryTypeIndex = bufferHelper.findMemoryType(memRequirements.memoryTypeBits, properties);
 
         if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate image memory!");
@@ -1543,7 +1627,7 @@ private:
     }
     
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
         
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1586,11 +1670,11 @@ private:
             1, &barrier
         );
 
-        endSingleTimeCommands(commandBuffer);
+        bufferHelper.endSingleTimeCommands(commandBuffer);
     }
     
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
         
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -1617,7 +1701,7 @@ private:
             &region
         );
 
-        endSingleTimeCommands(commandBuffer);
+        bufferHelper.endSingleTimeCommands(commandBuffer);
     }
     
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
@@ -1705,6 +1789,40 @@ private:
         return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
+    /* ---------------- Load models ---------------- */
+    void createModels(){
+        // for(ModelInfo& info: scene.model){
+        //     models.emplace_back(info);
+        //     models.back().load();
+        // }
+        //TEST: 
+        ModelPushConstant pc{};
+        pc.model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
+        
+        // pc.model = mat4::transpose(mat4(-0.0f,1,0,0,
+        //                 -1,-0.0f,0,0,
+        //                 0,0,1,0,
+        //                 0,0,0,1));
+        VkModel model = {};
+        model.pc = pc;
+        model.vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+                        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+        model.load();
+        models.push_back(model);
+
+        // ModelPushConstant pc2{};
+        // pc2.model = glm::rotate(glm::mat4(1.0f), 2.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
+        
+        // VkModel model2 = {};
+        // model2.pc = pc2;
+        // model2.vertices = {{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        //                 {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        //                 {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}}};
+        // model2.load();
+        // models.push_back(model2);
+    }
+    
 };
 
 #endif /* viewer_h */
