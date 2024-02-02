@@ -8,26 +8,21 @@
 #ifndef scene_h
 #define scene_h
 
+#include <__config>
 #include <memory>
 #include <cstdint>
 #include <cstdlib>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 #include <string>
 #include <fstream>
-#include "vec.h"
-#include "mat.h"
-#include "json_parser.h"
 #include "math_util.h"
+#include "mathlib.h"
+#include "json_parser.h"
 #include "vertex.hpp"
 
-
-
-struct Vertex {
-    vec3 pos;
-    vec3 normal;
-    vec<uint8_t,3> color;
-};
+const std::string SCENE_PATH = "./scene/";
 
 struct Mesh;
 struct Transform;
@@ -42,82 +37,89 @@ struct Transform {
     std::vector<std::shared_ptr<Transform> > children;
 
     Transform(const std::string _name, const vec3 _translation, const vec4 _rotation, const vec3 _scale)
-        : name(_name), translation(_translation), rotation(_rotation), scale(_scale), parent(nullptr) {}
+        : name(_name), translation(_translation), rotation(_rotation), scale(_scale) {}
+
+    mat4 localToParent() const {
+        return translationMat(translation) * rotationMat(rotation) * scaleMat(scale);
+    }
+
+    mat4 localToWorld() const {
+        if(parent!=nullptr){
+            return parent->localToWorld() * localToParent();
+        }
+        return localToParent();
+    }
 };
 
 struct Mesh {
     std::string name;
-    std::string topology;
+    std::string topology; //Assume TRIANGLE_LIST
     int count;
     std::string src;
     int offset;
-    // std::vector<Vertex> vertices;
-    
 
     Mesh(std::string _name, std::string _topology, int _count, std::string _src, int _offset)
         : name(_name), topology(_topology), count(_count), src(_src), offset(_offset) {
           }
-
-    void loadMesh(const std::string src, const int offset){
-        std::ifstream infile(SCENE_PATH+src, std::ifstream::binary);
-
-        infile.seekg(0, infile.end);
-        const size_t num_elements = infile.tellg() / 28;
-        infile.seekg(offset);
-        
-        vertices.resize(num_elements);
-        for(size_t i=0; i<num_elements; i++) {
-            Vertex& v = vertices[i];
-            infile.read((char*)&v.pos[0], sizeof(float));
-            infile.read((char*)&v.pos[1], sizeof(float));
-            infile.read((char*)&v.pos[2], sizeof(float));
-        
-            infile.read((char*)&v.normal[0], sizeof(float));
-            infile.read((char*)&v.normal[1], sizeof(float));
-            infile.read((char*)&v.normal[2], sizeof(float));
-            
-            infile.read((char*)&v.color[0], sizeof(uint8_t));
-            infile.read((char*)&v.color[1], sizeof(uint8_t));
-            infile.read((char*)&v.color[2], sizeof(uint8_t));
-        }
-    }
 };
 
 struct ModelInfo {
-    UniformBufferObject ubo;
+    mat4 model;
     std::string src;
     int offset;
-}
+};
 
 struct Camera {
-    std::shared_ptr<Transform> transform;
     float aspect;
     float vfov;
     float near;
     float far;
-    Camera(std::shared_ptr<Transform> _transform, float _aspect, float _vfov, float _near, float _far)
-        : transform(_transform), aspect(_aspect), vfov(_vfov), near(_near), far(_far) {}
+    std::shared_ptr<Transform> transform; // equivalent to view matrix
+
+    Camera(float _aspect, float _vfov, float _near, float _far)
+        : aspect(_aspect), vfov(_vfov), near(_near), far(_far) {}
 
     mat4 getPerspective(){
         return perspective(vfov, aspect, near, far);
     };
+
+    mat4 getView() {
+        return transform->localToWorld();
+    }
 };
 
 struct Driver {
     std::string name;
-    std::shared_ptr<Transform> transform;
     std::string channel;
     std::vector<uint32_t> times;
     std::vector<vec3> values;
     std::string interpolation;
+    std::shared_ptr<Transform> transform;
 
-    Driver(const std::string& _name, std::shared_ptr<Transform> _transform, const std::string& _channel,
-           const std::vector<uint32_t>& _times, const std::vector<vec3>& _values, const std::string& _interpolation)
-        : name(_name), transform(_transform), channel(_channel),
-          times(_times), values(_values), interpolation(_interpolation) {}
+    Driver(const std::string& _name, const std::string& _channel, const std::vector<uint32_t>& _times, 
+           const std::vector<vec3>& _values, const std::string& _interpolation)
+        : name(_name), channel(_channel), times(_times), values(_values), interpolation(_interpolation) {}
 };
 
-struct Scene {
+class Scene {
+public:
+    void init(const std::string& file_path) {
+        const JsonList jsonList = parseScene(file_path);
+        loadScene(jsonList);
+    }
+
+    std::shared_ptr<Camera> getCamera(std::string name) {
+        if(cameras.count(name)==0){
+            throw std::runtime_error("camera not found");
+        }
+        return cameras[name];
+    }
+
+    const std::vector<ModelInfo>& getModelInfos() const {
+        return modelInfos;
+    }
+
+private:
     std::string name;
     std::vector<std::shared_ptr<Transform> > roots;
     std::vector<std::shared_ptr<Transform> > transforms;
@@ -126,11 +128,7 @@ struct Scene {
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
     std::vector<ModelInfo> modelInfos;
 
-    void init(const std::string& file_path) {
-        const JsonList jsonList = parseScene(file_path);
-        loadScene(jsonList);
-        computeModelInfos();
-    }
+    
 
     JsonList parseScene(const std::string& file_path) {
         JsonParser parser;
@@ -190,7 +188,6 @@ struct Scene {
         auto load_camera = [=](JsonObject& jmap){
             JsonObject perspective = jmap["perspective"]->as_obj().value();
             std::shared_ptr<Camera> cam_ptr = std::make_shared<Camera>(
-                nullptr,
                 perspective["aspect"]->as_num().value(),
                 perspective["vfov"]->as_num().value(),
                 perspective["near"]->as_num().value(),
@@ -213,7 +210,6 @@ struct Scene {
             }
             std::shared_ptr<Driver> driver_ptr = std::make_shared<Driver>(
                 jmap["name"]->as_str().value(),
-                nullptr,
                 jmap["channel"]->as_str().value(),
                 times,
                 values,
@@ -274,6 +270,8 @@ struct Scene {
                 idx_to_cam[r.from]->transform = idx_to_trans[r.to];
             } else if (r.fromType == Type::Me) {
                 idx_to_trans[r.to]->meshes.push_back(idx_to_mesh[r.from]);
+                ModelInfo info = {idx_to_trans[r.to]->localToWorld(), idx_to_mesh[r.from]->src, idx_to_mesh[r.from]->offset};
+                modelInfos.push_back(info);
             } else if (r.fromType == Type::Trans) {
                 idx_to_trans[r.from]->children.push_back(idx_to_trans[r.to]);
                 idx_to_trans[r.to]->parent = idx_to_trans[r.from];
@@ -283,10 +281,6 @@ struct Scene {
         for(int n: root_idxes){
             roots.push_back(idx_to_trans[n]);
         }
-    }
-
-    void computeModelInfos(){
-
     }
 };
 

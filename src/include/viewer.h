@@ -348,32 +348,32 @@ private:
         
         }
 
-        // void loadMesh(const std::string src, const int offset){
-        //     std::ifstream infile(SCENE_PATH+src, std::ifstream::binary);
+        void loadMesh(const std::string src, const int offset){
+            std::ifstream infile(SCENE_PATH+src, std::ifstream::binary);
 
-        //     infile.seekg(0, infile.end);
-        //     const size_t num_elements = infile.tellg() / 28;
-        //     infile.seekg(offset);
+            infile.seekg(0, infile.end);
+            const size_t num_elements = infile.tellg() / 28;
+            infile.seekg(offset);
             
-        //     vertices.resize(num_elements);
-        //     for(size_t i=0; i<num_elements; i++) {
-        //         Vertex& v = vertices[i];
-        //         infile.read((char*)&v.pos[0], sizeof(float));
-        //         infile.read((char*)&v.pos[1], sizeof(float));
-        //         infile.read((char*)&v.pos[2], sizeof(float));
+            vertices.resize(num_elements);
+            for(size_t i=0; i<num_elements; i++) {
+                Vertex& v = vertices[i];
+                infile.read((char*)&v.pos[0], sizeof(float));
+                infile.read((char*)&v.pos[1], sizeof(float));
+                infile.read((char*)&v.pos[2], sizeof(float));
             
-        //         infile.read((char*)&v.normal[0], sizeof(float));
-        //         infile.read((char*)&v.normal[1], sizeof(float));
-        //         infile.read((char*)&v.normal[2], sizeof(float));
+                infile.read((char*)&v.normal[0], sizeof(float));
+                infile.read((char*)&v.normal[1], sizeof(float));
+                infile.read((char*)&v.normal[2], sizeof(float));
                 
-        //         infile.read((char*)&v.color[0], sizeof(uint8_t));
-        //         infile.read((char*)&v.color[1], sizeof(uint8_t));
-        //         infile.read((char*)&v.color[2], sizeof(uint8_t));
-        //     }
-        // }
+                infile.read((char*)&v.color[0], sizeof(uint8_t));
+                infile.read((char*)&v.color[1], sizeof(uint8_t));
+                infile.read((char*)&v.color[2], sizeof(uint8_t));
+            }
+        }
 
         void createVertexBuffer() {
-            VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+            VkDeviceSize bufferSize = sizeof(vertices.at(0)) * vertices.size();
             
             VkBuffer stagingBuffer;
             VkDeviceMemory stagingBufferMemory;
@@ -1473,13 +1473,13 @@ private:
         // float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
         UniformBufferObject ubo{};
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //eye position, center position and up axis
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
-        ubo.proj[1][1] *= -1;
-
-        // ubo.view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
-        // ubo.proj = perspective(degToRad(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        // ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //eye position, center position and up axis
+        // ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
         // ubo.proj[1][1] *= -1;
+
+        ubo.view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = perspective(degToRad(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        ubo.proj[1][1] *= -1;
         
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
@@ -1797,17 +1797,18 @@ private:
         // }
         //TEST: 
         ModelPushConstant pc{};
-        pc.model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
+        // pc.model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
         
-        // pc.model = mat4::transpose(mat4(-0.0f,1,0,0,
-        //                 -1,-0.0f,0,0,
-        //                 0,0,1,0,
-        //                 0,0,0,1));
+        pc.model = mat4(-0.0f,1,0,0,
+                        -1,-0.0f,0,0,
+                        0,0,1,0,
+                        0,0,0,1);
         VkModel model = {};
         model.pc = pc;
-        model.vertices = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-                        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-                        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+        model.vertices = {{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1, 0, 0}},
+                        {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0, 1, 0}},
+                        {{0.5f, 0.5f, 0.0f},{0.0f, 0.0f, 1.0f}, {0, 0, 1}}};
+
         model.load();
         models.push_back(model);
 
