@@ -5,12 +5,12 @@
 //  Created by qiru hu on 1/28/24.
 //
 
-#ifndef mat_h
-#define mat_h
+#pragma once
 
 #include "vec.h"
 #include <cassert>
 #include <cstddef>
+#include <string>
 
 template<typename T, uint32_t row_size, uint32_t col_size>
 class mat {
@@ -211,6 +211,17 @@ public:
         return r;
     }
 
+    template<typename T1>
+    vec<T,row_size> operator*(const vec<T1,col_size> v) const {
+        vec<T,row_size> r = vec<T,row_size>();
+        for(size_t i=0; i<row_size; ++i){
+            for(size_t j=0; j<col_size; ++j){
+                r[i] += data[j][i] * v[j];
+            }
+        }
+        return r;
+    }
+
     std::string as_string() const {
         std::string str = "";
         for(size_t i=0; i<col_size; ++i){
@@ -255,18 +266,5 @@ typedef mat<float,4,4> mat4;
 typedef mat<float,3,3> mat3;
 typedef mat<float,2,2> mat2;
 
-// class mat4_64 {
-//     float data[16];
 
-//     mat4_64(mat4 m){
-//         size_t i = 0;
-//         for(size_t r=0; r<4; r++){
-//             for(size_t c=0; c<4; c++){
-//                 data[i++] = m[r][c];
-//             }
-//         }
-//     }
-// }
-
-
-#endif /* mat_h */
+/* mat_h */

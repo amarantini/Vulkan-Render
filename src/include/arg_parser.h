@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/29/24.
 //
 
-#ifndef arg_parser_h
-#define arg_parser_h
+#pragma once
 
 #include <cassert>
 #include <stdexcept>
@@ -85,4 +84,4 @@ public:
     }
 };
 
-#endif /* arg_parser_h */
+/* arg_parser_h */

@@ -11,7 +11,6 @@
 #include "arg_parser.h"
 #include "viewer.h"
 
-const std::string SCENE_PATH = "./scene/";
 
 // Define arguments
 const std::string SCENE = "--scene";
@@ -31,10 +30,10 @@ int main(int argc, char ** argv) {
     arg_parser.add_option(SCENE, true);
     // view the scene through the camera named name. 
     //If such a camera doesn't exist in the scene, abort
-    arg_parser.add_option(CAMERA, false, "default_camera");
+    arg_parser.add_option(CAMERA, false);
     //use the physical device whose VkPhysicalDeviceProperties::deviceName matches name. 
     //If such a device does not exist, abort
-    arg_parser.add_option(PHYSICAL_DEVICE, false, "default_physical_device");
+    arg_parser.add_option(PHYSICAL_DEVICE, false);
     arg_parser.add_option(LIST_PHYSICAL_DEVICE, false , "", 0);
     //set the initial size of the drawable part of the window in physical pixels. 
     //If the resulting swapchain extent does not match the requested size 
@@ -47,10 +46,10 @@ int main(int argc, char ** argv) {
 
     arg_parser.parse(argc, argv);
 
-    [[maybe_unused]] std::string scene_file_path = SCENE_PATH + (*arg_parser.get_option(SCENE))[0];
-    [[maybe_unused]] std::string camera = "";
-    [[maybe_unused]] std::string physical_device = "";
-    [[maybe_unused]] int w, h;
+    std::string scene_file_path = SCENE_PATH + (*arg_parser.get_option(SCENE))[0];
+    std::string camera;
+    std::string physical_device;
+    int w, h;
     [[maybe_unused]] std::string culling_mode = "none";
     [[maybe_unused]] bool headless = false;
     [[maybe_unused]] std::string event_file_name;
@@ -58,18 +57,24 @@ int main(int argc, char ** argv) {
     ViewerApplication app;
 
     const std::vector<std::string>* pt= nullptr;
+    // if required to list physical device, print physical device names and exit
     pt = arg_parser.get_option(LIST_PHYSICAL_DEVICE);
     if(pt) {
         app.listPhysicalDevice();
         return 0;
     }
+
+    app.setUpScene(scene_file_path);
+
     pt = arg_parser.get_option(CAMERA);
     if(pt) {
-        scene_file_path = (*pt)[0];
+        camera = (*pt)[0];
+        app.setCamera(camera);
     }   
     pt = arg_parser.get_option(PHYSICAL_DEVICE);
     if(pt) {
         physical_device = (*pt)[0];
+        app.setPhysicalDevice(physical_device);
     }
     pt = arg_parser.get_option(DRAWING_SIZE);
     if(pt){
@@ -88,7 +93,14 @@ int main(int argc, char ** argv) {
         app.setHeadless(headless);
     }
     
-
+    try {
+        app.run();
+    } catch (const std::exception& e){
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    return EXIT_SUCCESS;
 
 
 
@@ -103,10 +115,10 @@ int main(int argc, char ** argv) {
     // mat4 view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
     // std::cout<<"My view: "<<view<<"\n";
 
-    // glm::mat4 glm_proj = glm::perspective(glm::radians(45.0f), 800 / (float)600, 0.1f, 10.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
+    // glm::mat4 glm_proj = glm::perspective(0.47109f, 800 / (float)450, 0.1f, 1000.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
     // glm_proj[1][1] *= -1;
 
-    // mat4 proj = perspective(degToRad(45.0f), 800 / (float) 600, 0.1f, 10.0f);
+    // mat4 proj = perspective(0.47109f, 800 / (float) 450, 0.1f, 1000.0f);
     // proj[1][1] *= -1;
     // std::cout<<"Proj: ";
     // for(int i=0 ; i<4; i++){
@@ -168,15 +180,4 @@ int main(int argc, char ** argv) {
     // std::cout<<sizeof(mat4)<<"\n";
     // std::cout<<sizeof(std::array<float,4>)<<"\n";
     // std::cout<<sizeof(vec4)<<"\n";
-
-
-    try {
-        // app.setUpScene(scene_file_path);
-        app.run();
-    } catch (const std::exception& e){
-        std::cerr << e.what() << std::endl;
-        return EXIT_FAILURE;
-    }
-    
-    return EXIT_SUCCESS;
 }

@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/31/24.
 //  Referenced https://github.com/ixchow/sejp/tree/main
 
-#ifndef json_parser_h
-#define json_parser_h
+#pragma once
 
 #include <cstdint>
 #include <cstdlib>
@@ -104,4 +103,4 @@ private:
 
 
 
-#endif /* json_parser_h */
+ /* json_parser_h */

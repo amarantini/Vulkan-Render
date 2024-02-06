@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/28/24.
 //  Referenced VulkanCookbook
 
-#ifndef math_util_h
-#define math_util_h
+#pragma once
 
 #include "mat.h"
 #include "vec.h"
@@ -30,10 +29,10 @@ template float dot(vec3 l, vec3 r);
 Rotate the current transformation (@transform) to the rotation angle (@angle) 
 by the rotation axis (@axis)
 */ 
-mat4 rotate(mat4 transform, float angle, vec3 axis){
-    //TODO
-    return mat4::Zero;
-}
+// mat4 rotate(mat4 transform, float angle, vec3 axis){
+//     //TODO
+//     return mat4::Zero;
+// }
 
 /**
 Return transformation for viewing the scene from eye position (@eye)
@@ -70,6 +69,7 @@ Return perspective matrix with
 - @far: far clipping plane distance
 */
 mat4 perspective(const float vfov, const float aspect, const float near, const float far){
+    //TODO: infinite perspective matrix
     float tanHalfFovInv = 1.0f / std::tan(vfov/2.0f);
     //Referring to glm::perspectiveRH_ZO
     return mat4(tanHalfFovInv/aspect, 0.0f, 0.0f, 0.0f,
@@ -84,37 +84,71 @@ float degToRad(float degree) {
 }
 
 // Prepare a translation matrix
-mat4 translationMat(vec3 translation) {
+mat4 translationMat(vec3 t) {
     return mat4(
         1.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 1.0f, 0.0f,
-        translation[0], translation[1], translation[2], 1.0f
+        t[0], t[1], t[2], 1.0f
     );
 }
 
 // Prepare a scale matrix
-mat4 scaleMat(vec3 scale) {
+mat4 scaleMat(vec3 s) {
     return mat4(
-        scale[0], 0.0f, 0.0f, 0.0f,
-        0.0f, scale[1], 0.0f, 0.0f,
-        0.0f, 0.0f, scale[2], 0.0f,
+        s[0], 0.0f, 0.0f, 0.0f,
+        0.0f, s[1], 0.0f, 0.0f,
+        0.0f, 0.0f, s[2], 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
     );
 }
 
 // Prepare a rotation matrix (from a quaternion)
-mat4 rotationMat(vec4 rotation) {
-    float x = rotation[0];
-    float y = rotation[1];
-    float z = rotation[2];
-    float w = rotation[3];
-    return mat4(
-        2*(x*x+y*y)-1, 2*(y*z-x*w), 2*(y*w+x*z), 0.0f,
-        2*(y*z+x*w), 2*(x*x+z*z)-1, 2*(z*w-x*y), 0.0f,
-        2*(y*w-x*z), 2*(z*w+x*y), 2*(x*x-w*w)-1, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    );
+mat4 rotationMat(vec4 r) {
+    // float x = rotation[0];
+    // float y = rotation[1];
+    // float z = rotation[2];
+    // float w = rotation[3];
+    // return mat4::transpose(mat4(
+    //     2*(x*x+y*y)-1, 2*(y*z-x*w), 2*(y*w+x*z), 0.0f,
+    //     2*(y*z+x*w), 2*(x*x+z*z)-1, 2*(z*w-x*y), 0.0f,
+    //     2*(y*w-x*z), 2*(z*w+x*y), 2*(x*x-w*w)-1, 0.0f,
+    //     0.0f, 0.0f, 0.0f, 1.0f
+    // ));
+
+    mat4 m = mat4::I;
+    float qxx(r[0] * r[0]);
+    float qyy(r[1] * r[1]);
+    float qzz(r[2] * r[2]);
+    float qxz(r[0] * r[2]);
+    float qxy(r[0] * r[1]);
+    float qyz(r[1] * r[2]);
+    float qwx(r[3] * r[0]);
+    float qwy(r[3] * r[1]);
+    float qwz(r[3] * r[2]);
+
+    m[0][0] = 1.0f - 2.0f * (qyy +  qzz);
+    m[0][1] = 2.0f * (qxy + qwz);
+    m[0][2] = 2.0f * (qxz - qwy);
+
+    m[1][0] = 2.0f * (qxy - qwz);
+    m[1][1] = 1.0f - 2.0f * (qxx +  qzz);
+    m[1][2] = 2.0f * (qyz + qwx);
+
+    m[2][0] = 2.0f * (qxz + qwy);
+    m[2][1] = 2.0f * (qyz - qwx);
+    m[2][2] = 1.0f - 2.0f * (qxx +  qyy);
+    return m;
 }
 
-#endif /* math_util_h */
+vec4 quaternionInv(const vec4& q){
+    // conjungate
+    vec4 r = -q;
+    r[3] *= -1;
+
+    //unit
+    r.normalize();
+    return r;
+}
+
+/* math_util_h */

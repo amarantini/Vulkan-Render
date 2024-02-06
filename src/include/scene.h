@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/31/24.
 //
 
-#ifndef scene_h
-#define scene_h
+#pragma once
 
 #include <__config>
 #include <memory>
@@ -43,11 +42,22 @@ struct Transform {
         return translationMat(translation) * rotationMat(rotation) * scaleMat(scale);
     }
 
+    mat4 parentToLocal() const {
+        return scaleMat(1.0f / scale) * rotationMat(quaternionInv(rotation)) * translationMat(-translation);
+    }
+
     mat4 localToWorld() const {
         if(parent!=nullptr){
             return parent->localToWorld() * localToParent();
         }
         return localToParent();
+    }
+
+    mat4 worldToLocal() const {
+        if(parent!=nullptr){
+            return parentToLocal() * parent->worldToLocal();
+        }
+        return parentToLocal();
     }
 };
 
@@ -57,17 +67,14 @@ struct Mesh {
     int count;
     std::string src;
     int offset;
+    int stride;
 
-    Mesh(std::string _name, std::string _topology, int _count, std::string _src, int _offset)
-        : name(_name), topology(_topology), count(_count), src(_src), offset(_offset) {
+    Mesh(std::string _name, std::string _topology, int _count, std::string _src, int _offset, int _stride)
+        : name(_name), topology(_topology), count(_count), src(_src), offset(_offset), stride(_stride) {
           }
 };
 
-struct ModelInfo {
-    mat4 model;
-    std::string src;
-    int offset;
-};
+
 
 struct Camera {
     float aspect;
@@ -84,7 +91,9 @@ struct Camera {
     };
 
     mat4 getView() {
-        return transform->localToWorld();
+        if(transform == nullptr)
+            return mat4::I;
+        return transform->worldToLocal();
     }
 };
 
@@ -101,8 +110,17 @@ struct Driver {
         : name(_name), channel(_channel), times(_times), values(_values), interpolation(_interpolation) {}
 };
 
+struct ModelInfo {
+    mat4 model;
+    std::string src;
+    int offset;
+    int stride;
+};
+
 class Scene {
 public:
+    std::vector<ModelInfo> modelInfos;
+
     void init(const std::string& file_path) {
         const JsonList jsonList = parseScene(file_path);
         loadScene(jsonList);
@@ -113,6 +131,13 @@ public:
             throw std::runtime_error("camera not found");
         }
         return cameras[name];
+    }
+
+    std::shared_ptr<Camera> getDefaultCamera() {
+        if(cameras.size()==0){
+            throw std::runtime_error("no camera");
+        }
+        return cameras.begin()->second;
     }
 
     const std::vector<ModelInfo>& getModelInfos() const {
@@ -126,8 +151,6 @@ private:
     std::vector<std::shared_ptr<Mesh> > meshs;
     std::vector<std::shared_ptr<Driver> > drivers;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
-    std::vector<ModelInfo> modelInfos;
-
     
 
     JsonList parseScene(const std::string& file_path) {
@@ -168,7 +191,8 @@ private:
                 jmap["topology"]->as_str().value(),
                 jmap["count"]->as_num().value(),
                 pos["src"]->as_str().value(),
-                pos["offset"]->as_num().value()
+                pos["offset"]->as_num().value(),
+                pos["stride"]->as_num().value()
         );
             meshs.push_back(mesh_ptr);
             return mesh_ptr;
@@ -270,7 +294,10 @@ private:
                 idx_to_cam[r.from]->transform = idx_to_trans[r.to];
             } else if (r.fromType == Type::Me) {
                 idx_to_trans[r.to]->meshes.push_back(idx_to_mesh[r.from]);
-                ModelInfo info = {idx_to_trans[r.to]->localToWorld(), idx_to_mesh[r.from]->src, idx_to_mesh[r.from]->offset};
+                ModelInfo info = {idx_to_trans[r.to]->localToWorld(), 
+                                idx_to_mesh[r.from]->src, 
+                                idx_to_mesh[r.from]->offset, 
+                                idx_to_mesh[r.from]->stride};
                 modelInfos.push_back(info);
             } else if (r.fromType == Type::Trans) {
                 idx_to_trans[r.from]->children.push_back(idx_to_trans[r.to]);
@@ -284,4 +311,4 @@ private:
     }
 };
 
-#endif /* scene_h */
+ /* scene_h */

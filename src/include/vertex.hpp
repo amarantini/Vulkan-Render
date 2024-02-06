@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/20/24.
 //
 
-#ifndef vertex_hpp
-#define vertex_hpp
+#pragma once
 
 // #include <glm/glm.hpp>
 #include <vulkan/vulkan_beta.h>
@@ -66,4 +65,4 @@ struct ModelPushConstant {
 };
 
 
-#endif /* vertex_hpp */
+/* vertex_hpp */

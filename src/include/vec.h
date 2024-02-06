@@ -5,11 +5,11 @@
 //  Created by qiru hu on 1/28/24.
 //
 
-#ifndef vec_h
-#define vec_h
+#pragma once
 
 #include <array>
 #include <cassert>
+#include <cstddef>
 #include <functional>
 #include <sys/_types/_sigaltstack.h>
 
@@ -221,6 +221,14 @@ public:
         return result;
     }
 
+    VEC_TYPE operator-() const {
+        VEC_TYPE v;
+        for(size_t i=0; i<size; i++){
+            v[i] = - data[i];
+        }
+		return v;
+	}
+
     T norm() const {
         T sum = 0;
         for(size_t i=0; i<size; i++){
@@ -252,8 +260,44 @@ public:
     }
 };
 
+template<typename T, uint32_t size>
+inline vec<T,size> operator+(float s, vec<T,size> v) {
+    vec<T,size> r;
+    for(size_t i=0; i<size; i++){
+        r[i] = s + v[i];
+    }
+	return r;
+}
+
+template<typename T, uint32_t size>
+inline vec<T,size> operator-(float s, vec<T,size> v) {
+	vec<T,size> r;
+    for(size_t i=0; i<size; i++){
+        r[i] = s - v[i];
+    }
+	return r;
+}
+
+template<typename T, uint32_t size>
+inline vec<T,size> operator*(float s, vec<T,size> v) {
+	vec<T,size> r;
+    for(size_t i=0; i<size; i++){
+        r[i] = s * v[i];
+    }
+	return r;
+}
+
+template<typename T, uint32_t size>
+inline vec<T,size> operator/(float s, vec<T,size> v) {
+	vec<T,size> r;
+    for(size_t i=0; i<size; i++){
+        r[i] = s / v[i];
+    }
+	return r;
+}
+
 typedef vec<float,2> vec2;
 typedef vec<float,3> vec3;
 typedef vec<float,4> vec4;
 
-#endif /* vec_h */
+/* vec_h */

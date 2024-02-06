@@ -82,13 +82,15 @@ if (maek.OS === "windows") {
 // objFileBase (optional): base name object file to produce (if not supplied, set to options.objDir + '/' + cppFile without the extension)
 //returns objFile: objFileBase + a platform-dependant suffix ('.o' or '.obj')
 // const test_obj = maek.CPP('test.cpp');
+const json_parser_obj = maek.CPP('./src/include/json_parser.cpp');
 const viewer_obj = maek.CPP('./src/main.cpp');
+
 
 //'[exeFile =] LINK(objFiles, exeFileBase, [, options])' links an array of objects into an executable:
 // objFiles: array of objects to link
 // exeFileBase: name of executable file to produce
 //returns exeFile: exeFileBase + a platform-dependant suffix (e.g., '.exe' on windows)
-const viewer_exe = maek.LINK([viewer_obj], 'bin/viewer');
+const viewer_exe = maek.LINK([json_parser_obj, viewer_obj], 'bin/viewer');
 // const test_exe = maek.LINK([test_obj, Player_obj, Level_obj], 'test/game-test');
 
 

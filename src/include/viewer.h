@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/29/24.
 //
 
-#ifndef viewer_h
-#define viewer_h
+#pragma once
 
 //
 //  main.cpp
@@ -44,10 +43,11 @@
 
 #include "file.hpp"
 #include "vertex.hpp"
+#include "scene.h"
 #include "math_util.h"
 
 const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
+const uint32_t HEIGHT = 450;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -118,9 +118,27 @@ struct SwapChainSupportDetails {
 
 class ViewerApplication {
 public:
-    // void setUpScene(const std::string& file_name){
-    //     scene.init(file_name);
-    // }
+    void setUpScene(const std::string& file_name){
+        scene.init(file_name);
+        camera = scene.getDefaultCamera();
+    }
+
+    void setCamera(const std::string& camera_name) {
+        camera = scene.getCamera(camera_name);
+    }
+
+    void setPhysicalDevice(const std::string& _physical_device_name){
+        physical_device_name = _physical_device_name;
+    }
+
+    void setDrawingSize(const int& w, const int& h){
+        width = w;
+        height = h;
+    }
+
+    void setHeadless(bool _headless){
+        headless = _headless;
+    }
 
     void run(){
         initWindow();
@@ -146,21 +164,9 @@ public:
 
     }
 
-    void setPhysicalDeviceName(const std::string& _physical_device_name){
-        physical_device_name = _physical_device_name;
-    }
-
-    void setDrawingSize(const int& w, const int& h){
-        width = w;
-        height = h;
-    }
-
-    void setHeadless(bool _headless){
-        headless = _headless;
-    }
-
 private:
-    // Scene scene = {};
+    Scene scene = {};
+    std::shared_ptr<Camera> camera;
 
     std::string physical_device_name = "None";
     int width = WIDTH;
@@ -309,12 +315,14 @@ private:
     BufferHelper bufferHelper {};
 
     struct VkModel:BufferHelper {
-        // VkModel(ModelInfo& info){
-            // loadMesh(info.src, info.offset);
-        // }
+        VkModel() = default;
 
-        // UniformBufferObject ubo; // view, proj
-        ModelPushConstant pc; //model
+        VkModel(ModelInfo& info){
+            loadMesh(info.src, info.offset, info.stride);
+            pc.model = info.model;
+        }
+
+        ModelPushConstant pc = {}; //model
         std::vector<Vertex> vertices;
         // std::vector<uint16_t> indices
         VkBuffer vertexBuffer;
@@ -348,27 +356,40 @@ private:
         
         }
 
-        void loadMesh(const std::string src, const int offset){
+        void loadMesh(const std::string src, const int offset, const int stride){
             std::ifstream infile(SCENE_PATH+src, std::ifstream::binary);
 
             infile.seekg(0, infile.end);
-            const size_t num_elements = infile.tellg() / 28;
+            const size_t num_elements = infile.tellg() / stride;
             infile.seekg(offset);
             
             vertices.resize(num_elements);
             for(size_t i=0; i<num_elements; i++) {
                 Vertex& v = vertices[i];
-                infile.read((char*)&v.pos[0], sizeof(float));
-                infile.read((char*)&v.pos[1], sizeof(float));
-                infile.read((char*)&v.pos[2], sizeof(float));
-            
-                infile.read((char*)&v.normal[0], sizeof(float));
-                infile.read((char*)&v.normal[1], sizeof(float));
-                infile.read((char*)&v.normal[2], sizeof(float));
+                float f;
+                infile.read((char*)&f, sizeof(float));
+                v.pos[0] = f;
+                infile.read((char*)&f, sizeof(float));
+                v.pos[1] = f;
+                infile.read((char*)&f, sizeof(float));
+                v.pos[2] = f;
+
+                infile.read((char*)&f, sizeof(float));
+                v.normal[0] = f;
+                infile.read((char*)&f, sizeof(float));
+                v.normal[1] = f;
+                infile.read((char*)&f, sizeof(float));
+                v.normal[2] = f;
                 
-                infile.read((char*)&v.color[0], sizeof(uint8_t));
-                infile.read((char*)&v.color[1], sizeof(uint8_t));
-                infile.read((char*)&v.color[2], sizeof(uint8_t));
+                uint8_t color;
+                infile.read((char*)&color, sizeof(uint8_t));
+                v.color[0] = static_cast<float>(color);
+                infile.read((char*)&color, sizeof(uint8_t));
+                v.color[1] = static_cast<float>(color);
+                infile.read((char*)&color, sizeof(uint8_t));
+                v.color[2] = static_cast<float>(color);
+                infile.read((char*)&color, sizeof(uint8_t));
+                // v.color[3] = static_cast<float>(color);
             }
         }
 
@@ -414,6 +435,45 @@ private:
     };
 
     std::vector<VkModel> models;
+
+    /* ---------------- Load models ---------------- */
+    void createModels(){
+        for(ModelInfo& info: scene.modelInfos){
+            models.emplace_back(info);
+            models.back().load();
+            
+        }
+        // std::cout<<models[0].pc.model<<"\n";
+        // for(int i=0; i<10; i++)
+        //     std::cout<<"pos,normal,color: "<<models[0].vertices[i].pos<<", "<<models[0].vertices[i].normal<<", "<<models[0].vertices[i].color<<"\n";
+        //TEST: 
+        // ModelPushConstant pc{};
+        // pc.model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
+        
+        // pc.model = mat4(1.0f,0,0,0,
+        //                 0,1.0f,0,0,
+        //                 0,0,1,0,
+        //                 0,0,0,1);
+        // VkModel model = {};
+        // model.pc = pc;
+        // model.vertices = {{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1, 0, 0}},
+        //                 {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0, 1, 0}},
+        //                 {{0.5f, 0.5f, 0.0f},{0.0f, 0.0f, 1.0f}, {0, 0, 1}}};
+
+        // model.load();
+        // models.push_back(model);
+
+        // ModelPushConstant pc2{};
+        // pc2.model = glm::rotate(glm::mat4(1.0f), 2.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
+        
+        // VkModel model2 = {};
+        // model2.pc = pc2;
+        // model2.vertices = {{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        //                 {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+        //                 {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}}};
+        // model2.load();
+        // models.push_back(model2);
+    }
 
     
     void initWindow(){
@@ -1477,8 +1537,11 @@ private:
         // ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
         // ubo.proj[1][1] *= -1;
 
-        ubo.view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = perspective(degToRad(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        // ubo.view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
+        // ubo.proj = perspective(degToRad(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        // ubo.proj[1][1] *= -1;
+        ubo.view = camera->getView();
+        ubo.proj = camera->getPerspective();
         ubo.proj[1][1] *= -1;
         
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1789,41 +1852,8 @@ private:
         return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
-    /* ---------------- Load models ---------------- */
-    void createModels(){
-        // for(ModelInfo& info: scene.model){
-        //     models.emplace_back(info);
-        //     models.back().load();
-        // }
-        //TEST: 
-        ModelPushConstant pc{};
-        // pc.model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
-        
-        pc.model = mat4(-0.0f,1,0,0,
-                        -1,-0.0f,0,0,
-                        0,0,1,0,
-                        0,0,0,1);
-        VkModel model = {};
-        model.pc = pc;
-        model.vertices = {{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1, 0, 0}},
-                        {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0, 1, 0}},
-                        {{0.5f, 0.5f, 0.0f},{0.0f, 0.0f, 1.0f}, {0, 0, 1}}};
-
-        model.load();
-        models.push_back(model);
-
-        // ModelPushConstant pc2{};
-        // pc2.model = glm::rotate(glm::mat4(1.0f), 2.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
-        
-        // VkModel model2 = {};
-        // model2.pc = pc2;
-        // model2.vertices = {{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        //                 {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        //                 {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}}};
-        // model2.load();
-        // models.push_back(model2);
-    }
+    
     
 };
 
-#endif /* viewer_h */
+/* viewer_h */

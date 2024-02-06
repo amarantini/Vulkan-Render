@@ -5,8 +5,7 @@
 //  Created by qiru hu on 1/19/24.
 //
 
-#ifndef file_hpp
-#define file_hpp
+#pragma once
 
 #include <stdio.h>
 #include <fstream>
@@ -29,4 +28,4 @@ static std::vector<char> readFile(const std::string& filename) {
     return buffer;
 }
 
-#endif /* file_hpp */
+ /* file_hpp */
