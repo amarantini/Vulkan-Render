@@ -8,22 +8,25 @@
 #include <cassert>
 #include <cstdint>
 
+#include "constants.h"
 #include "arg_parser.h"
+// #include "window_controller.h"
 #include "viewer.h"
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <memory>
 
 
-// Define arguments
-const std::string SCENE = "--scene";
-const std::string CAMERA = "--camera";
-const std::string PHYSICAL_DEVICE = "--physical-device";
-const std::string LIST_PHYSICAL_DEVICE = "--list-physical-devices";
-const std::string DRAWING_SIZE = "--drawing-size";
-const std::string CULLING = "--culling";
-const std::string HEADLESS = "--headless";
 
 
 int main(int argc, char ** argv) {
     // Parse arguments
+    /* add_option(const std::string& opt_name, 
+        bool required,
+        int nargs = 1,
+        const std::string& default_val = "",
+        const std::vector<std::string> accepted_vals = std::vector<std::string>())
+    */
     ArgParser arg_parser;
 
     // pecifies the scene (in .s72 format) to view
@@ -34,24 +37,23 @@ int main(int argc, char ** argv) {
     //use the physical device whose VkPhysicalDeviceProperties::deviceName matches name. 
     //If such a device does not exist, abort
     arg_parser.add_option(PHYSICAL_DEVICE, false);
-    arg_parser.add_option(LIST_PHYSICAL_DEVICE, false , "", 0);
+    arg_parser.add_option(LIST_PHYSICAL_DEVICE, false, 0);
     //set the initial size of the drawable part of the window in physical pixels. 
     //If the resulting swapchain extent does not match the requested size 
     //(e.g., because the window manager won't allow a window this requested size), abort. 
     //If this flag is not specified, do something reasonable, like creating a moderately-sized window.
-    arg_parser.add_option(DRAWING_SIZE, false, "", 2);
+    arg_parser.add_option(DRAWING_SIZE, false, 2);
     //sets the culling mode. You may add additional culling modes when tackling extra goals
-    arg_parser.add_option(CULLING, false, "none", 1, {"none", "frustrum"});
+    arg_parser.add_option(CULLING, false, 1, CULLING_NONE, {CULLING_NONE, CULLING_FRUSTUM});
     arg_parser.add_option(HEADLESS, false);
-
+    arg_parser.add_option(ANIMATION_LOOP, false, 0);
     arg_parser.parse(argc, argv);
 
     std::string scene_file_path = SCENE_PATH + (*arg_parser.get_option(SCENE))[0];
     std::string camera;
     std::string physical_device;
     int w, h;
-    [[maybe_unused]] std::string culling_mode = "none";
-    [[maybe_unused]] bool headless = false;
+    std::string culling_mode = "none";
     [[maybe_unused]] std::string event_file_name;
 
     ViewerApplication app;
@@ -85,13 +87,18 @@ int main(int argc, char ** argv) {
     pt = arg_parser.get_option(CULLING);
     if(pt) {
         culling_mode = (*pt)[0];
+        app.setCulling(culling_mode);
     }
     pt = arg_parser.get_option(HEADLESS);
     if(pt) {
-        headless = true;
         event_file_name = (*pt)[0];
-        app.setHeadless(headless);
-    }
+        app.setHeadless(true);
+    } 
+    pt = arg_parser.get_option(ANIMATION_LOOP);
+    if(pt) {
+        app.setAnimationLoop(true);
+    } 
+
     
     try {
         app.run();
@@ -101,7 +108,6 @@ int main(int argc, char ** argv) {
     }
     
     return EXIT_SUCCESS;
-
 
 
     // glm::mat4 glm_view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //eye position, center position and up axis

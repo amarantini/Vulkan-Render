@@ -41,8 +41,8 @@ private:
 public:
     void add_option(const std::string& opt_name, 
                     bool required,
-                    const std::string& default_val = "",
                     int nargs = 1,
+                    const std::string& default_val = "",
                     const std::vector<std::string> accepted_vals = std::vector<std::string>()){
         options[opt_name] = std::make_unique<ArgValue>(required, nargs, default_val, accepted_vals);
     }

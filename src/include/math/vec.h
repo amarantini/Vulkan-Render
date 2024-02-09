@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstddef>
 #include <functional>
+#include <string>
 #include <sys/_types/_sigaltstack.h>
 
 template<typename T, uint32_t size>
@@ -243,6 +244,12 @@ public:
             data[i] /= n;
         }
     }
+
+    vec<T, size> normalized() {
+        vec<T, size> v(*this);
+        v.normalize();
+        return v;
+    }
     
     std::string as_string() const {
         std::string str = "";
@@ -258,7 +265,17 @@ public:
     friend std::ostream &operator<<(std::ostream &os, vec const &v) { 
         return os << v.as_string();
     }
+
 };
+
+template<typename T, uint32_t size>
+inline bool operator==(vec<T,size> l, vec<T,size> r) {
+    for(size_t i=0; i<size; i++){
+        if(l[i]!=r[i])
+            return false;
+    }
+	return true;
+}
 
 template<typename T, uint32_t size>
 inline vec<T,size> operator+(float s, vec<T,size> v) {

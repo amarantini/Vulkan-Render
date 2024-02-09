@@ -1,21 +1,16 @@
-//
-//  math_util.h
-//  VulkanTesting
-//
-//  Created by qiru hu on 1/28/24.
-//  Referenced VulkanCookbook
 
-#pragma once
+#include <_types/_uint32_t.h>
+#include <algorithm>
+#include "math_util.h"
 
-#include "mat.h"
-#include "vec.h"
+/* ----------------- Vec -----------------*/
 
 vec3 cross(vec3 l, vec3 r) {
 	return vec3(l[1] * r[2] - l[2] * r[1], l[2] * r[0] - l[0] * r[2], l[0] * r[1] - l[1] * r[0]);
 }
 
 template<typename T, uint32_t size>
-T dot(vec<T,size> l, vec<T,size> r) {
+T dot(const vec<T,size> l, const vec<T,size> r) {
     T result = 0;
     for(size_t i=0; i<size; i++){
         result += l[i]*r[i];
@@ -25,14 +20,38 @@ T dot(vec<T,size> l, vec<T,size> r) {
 
 template float dot(vec3 l, vec3 r);
 
-/**
-Rotate the current transformation (@transform) to the rotation angle (@angle) 
-by the rotation axis (@axis)
-*/ 
-// mat4 rotate(mat4 transform, float angle, vec3 axis){
-//     //TODO
-//     return mat4::Zero;
-// }
+template<typename T, uint32_t size>
+vec<T,size> vmin(const vec<T,size>& l, const vec<T,size>& r) {
+    vec<T,size> v;
+    for(size_t i=0; i<size; i++){
+        v[i] = std::min(l[i], r[i]);
+    }
+    return v;
+}
+
+template vec3 vmin(const vec3& l, const vec3& r);
+
+template<typename T, uint32_t size>
+vec<T,size> vmax(const vec<T,size>& l, const vec<T,size>& r) {
+    vec<T,size> v;
+    for(size_t i=0; i<size; i++){
+        v[i] = std::max(l[i], r[i]);
+    }
+    return v;
+}
+template vec3 vmax(const vec3& l, const vec3& r);
+
+// Convert degree to radians
+float degToRad(float degree) {
+    return degree * 2 * M_PI / 360.0f;
+}
+
+// Lerp
+vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/){
+    return start + (end - start) * t;
+}
+
+/* ---------------- Transform ---------------- */
 
 /**
 Return transformation for viewing the scene from eye position (@eye)
@@ -76,11 +95,6 @@ mat4 perspective(const float vfov, const float aspect, const float near, const f
                 0.0f, tanHalfFovInv, 0.0f,0.0f,
                 0.0f, 0.0f, far/(near-far), -1.0f,
                 0.0f, 0.0f, -far*near/(far-near), 0.0f);      
-}
-
-// Convert degree to radians
-float degToRad(float degree) {
-    return degree * 2 * M_PI / 360.0f;
 }
 
 // Prepare a translation matrix
@@ -141,7 +155,9 @@ mat4 rotationMat(vec4 r) {
     return m;
 }
 
-vec4 quaternionInv(const vec4& q){
+/* ---------------- Quad ---------------- */
+
+vec4 quaInv(const vec4& q){
     // conjungate
     vec4 r = -q;
     r[3] *= -1;
@@ -151,4 +167,43 @@ vec4 quaternionInv(const vec4& q){
     return r;
 }
 
-/* math_util_h */
+/** Return a quaternion given
+- @angle: rotation angle
+- @dir: rotation axis
+*/
+vec4 angleAxis(const float& angle, const vec3& dir){
+    float s = std::sin(angle * 0.5f);
+    return vec4(dir * s, std::cos(angle * 0.5f));
+}
+
+/** Quaternion multiplation
+*/
+
+vec4 quaMul(const vec4 l, const vec4 r) {
+    return vec4(l[1] * r[2] - l[2] * r[1] + l[0] * r[3] + l[3] * r[0], 
+                l[2] * r[0] - l[0] * r[2] + l[1] * r[3] + l[3] * r[1],
+		        l[0] * r[1] - l[1] * r[0] + l[2] * r[3] + l[3] * r[2], 
+                l[3] * r[3] - l[0] * r[0] - l[1] * r[1] - l[2] * r[2]);
+}
+
+/** Convert euler angle to quaternion */
+vec4 eulerToQua(vec3 euler){ //pitch, yaw, roll
+//roll (x), pitch (y), yaw (z)
+    if (euler == vec3(0.0f, 0.0f, M_PI/2.0f) || euler == vec3(M_PI/2.0f, 0.0f, 0.0f))
+			return vec4(0.0f, 0.0f, -1.0f, 0.0f);
+		float c1 = std::cos(euler[2] * 0.5f);
+		float c2 = std::cos(euler[1] * 0.5f);
+		float c3 = std::cos(euler[0] * 0.5f);
+		float s1 = std::sin(euler[2] * 0.5f);
+		float s2 = std::sin(euler[1] * 0.5f);
+		float s3 = std::sin(euler[0] * 0.5f);
+		float x = c1 * c2 * s3 - s1 * s2 * c3;
+		float y = c1 * s2 * c3 + s1 * c2 * s3;
+		float z = s1 * c2 * c3 - c1 * s2 * s3;
+		float w = c1 * c2 * c3 + s1 * s2 * s3;
+		return vec4(x, y, z, w);
+}
+
+vec4 quaLerp(const vec4 qStart, const vec4 qEnd, float t) {
+    return qStart * (1.0f - t) + qEnd * t;
+}
