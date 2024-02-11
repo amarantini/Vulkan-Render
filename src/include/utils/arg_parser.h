@@ -55,6 +55,9 @@ public:
                 std::vector<std::string>& accepted_vals = options[arg]->accepted_vals;
                 std::vector<std::string>& vals = options[arg]->vals;
                 for(size_t k=0; k<nagrs; k++){
+                    if(i+1>=argc){
+                        throw std::runtime_error("Missing arguments");
+                    }
                     vals[k] = argv[++i];
                     if(!accepted_vals.empty() && 
                         std::find(accepted_vals.begin(),accepted_vals.end(),vals[k]) == accepted_vals.end()) {

@@ -27,8 +27,6 @@ private:
     std::vector<Event> events;
     size_t idx = 0; 
 
-   
-
 public:
     EventsController() = default;
 

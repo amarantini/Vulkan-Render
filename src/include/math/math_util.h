@@ -9,24 +9,28 @@
 
 #include "mat.h"
 #include "vec.h"
+#include "qua.h"
 
 /* ----------------- Vec -----------------*/
-
+// Return the cross product of 2 vec3
 vec3 cross(const vec3 l, const vec3 r);
 
+// Return the dot product of 2 vec
 template<typename T, uint32_t size>
 T dot(const vec<T,size> l, const vec<T,size> r);
 
+// Return a vec whose elements are minimum of both vec
 template<typename T, uint32_t size>
 vec<T,size> vmin(const vec<T,size>& l, const vec<T,size>& r);
 
+// Return a vec whose elements are maximum of both vec
 template<typename T, uint32_t size>
 vec<T,size> vmax(const vec<T,size>& l, const vec<T,size>& r);
 
 // Convert degree to radians
 float degToRad(float degree);
 
-// Lerp
+// Liner interpolation between 2 vec3
 vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/);
 
 /* ---------------- Transform ---------------- */
@@ -53,26 +57,13 @@ mat4 translationMat(vec3 t);
 mat4 scaleMat(vec3 s);
 
 // Prepare a rotation matrix (from a quaternion)
-mat4 rotationMat(vec4 r);
+mat4 rotationMat(qua r);
 
-/* ---------------- Quad ---------------- */
 
-vec4 quaInv(const vec4& q);
-
-/** Return a quaternion given
-- @angle: rotation angle
-- @dir: rotation axis
-*/
-vec4 angleAxis(const float& angle, const vec3& dir);
-
-/** Quaternion multiplation
-*/
-
-vec4 quaMul(const vec4 l, const vec4 r);
-
-/** Convert euler angle to quaternion */
-vec4 eulerToQua(vec3 euler);
-
-vec4 quaLerp(const vec4 qStart, const vec4 qEnd, float t);
-
-/* math_util_h */
+/* ------------------ Quaternion ------------------ */
+// Convert euler angle to quaternion
+qua eulerToQua(vec3 euler);
+// Linear interpolation between 2 quaternions
+qua quaLerp(const qua qStart, const qua qEnd, float t);
+// Return a quaternion from an angle and a axis
+qua angleAxis(const float& angle, const vec3& dir);

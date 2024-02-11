@@ -40,14 +40,10 @@ void ViewerApplication::setUpScene(const std::string& file_name){
     scene.init(file_name);
     cameraController = std::make_shared<CameraController>(scene.getAllCameras(), width, height);
     animationController = std::make_shared<AnimationController>(scene.drivers);
-    ubo.proj = cameraController->getPerspective();
-    ubo.proj[1][1] *= -1;
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
     cameraController->setCamera(camera_name);
-    ubo.proj = cameraController->getPerspective();
-    ubo.proj[1][1] *= -1;
 }
 
 void ViewerApplication::setPhysicalDevice(const std::string& _physical_device_name){
@@ -58,8 +54,6 @@ void ViewerApplication::setDrawingSize(const int& w, const int& h){
     width = w;
     height = h;
     cameraController->setHeightWdith(height, width);
-    ubo.proj = cameraController->getPerspective();
-    ubo.proj[1][1] *= -1;
 }
 
 void ViewerApplication::setCulling(const std::string& culling_) {
@@ -1160,8 +1154,6 @@ void ViewerApplication::recreateSwapChain() {
 
     // update projection matrix
     cameraController->setHeightWdith(swapChainExtent.height, swapChainExtent.width);
-    ubo.proj = cameraController->getPerspective();
-    ubo.proj[1][1] *= -1;
 }
 
 
@@ -1217,7 +1209,13 @@ void ViewerApplication::createUniformBuffers() {
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
-    ubo.view = cameraController->getView();
+    if(cameraController->isSwitched() || cameraController->isMovable()) {
+        ubo.proj = cameraController->getPerspective();
+        ubo.proj[1][1] *= -1;
+        ubo.view = cameraController->getView();
+       
+        cameraController->resetSwitched();
+    }
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
@@ -1546,11 +1544,13 @@ void ViewerApplication::setAnimationLoop() {
 
 /* ------------------ For events processing ------------------ */
 void ViewerApplication::eventLoop() {
+    float currt_frame_time = 0;
     while(!eventController->isFinished()) {
         Event& e = eventController->nextEvent();
-
+        float time = e.ts / (float) 1e6;
+        animationController->driveAnimation(time - currt_frame_time);
+        currt_frame_time = time;
         if(e.type == EventType::AVAILABLE) {
-            animationController->driveAnimation(FRAME_TIME);
             drawFrame();
         } else if (e.type == EventType::PLAY) {
             animationController->setPlaybackTimeRate(e.time, e.rate);

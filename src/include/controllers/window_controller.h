@@ -7,7 +7,7 @@ class WindowController {
     friend class ViewerApplication;
 private:
     GLFWwindow* window;
-    bool framebufferResized = false;
+    bool framebuffer_resized = false;
     int width, height;
 
 public:

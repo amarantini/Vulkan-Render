@@ -7,11 +7,11 @@ bool WindowController::shouldClose() {
 }
 
 bool WindowController::wasResized() { 
-    return framebufferResized; 
+    return framebuffer_resized; 
 }
 
 void WindowController::resetResized() { 
-    framebufferResized = false; 
+    framebuffer_resized = false; 
 }
 
 void WindowController::initWindow(float width, float height){
@@ -46,7 +46,7 @@ void WindowController::getFramebufferSize(int* width, int* height){
 
 void WindowController::framebufferResizeCallback(GLFWwindow* window, int width, int height)  {
     auto windowController = reinterpret_cast<WindowController *>(glfwGetWindowUserPointer(window));
-    windowController->framebufferResized = true;
+    windowController->framebuffer_resized = true;
     windowController->width = width;
     windowController->height = height;
 }

@@ -57,12 +57,12 @@ public:
     InputController() = default;
     virtual ~InputController() = default;
 
-    void setCameraController(std::shared_ptr<CameraController> cameraController_){
-        cameraController = cameraController_;
+    void setCameraController(std::shared_ptr<CameraController> camera_controller_){
+        camera_controller = camera_controller_;
     }
 
-    void setAnimationController(std::shared_ptr<AnimationController> animationController_){
-        animationController = animationController_;
+    void setAnimationController(std::shared_ptr<AnimationController> animation_controller_){
+        animation_controller = animation_controller_;
     }
 
     virtual void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
@@ -96,22 +96,22 @@ public:
         int action,
         int mods) {
         if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-            cameraController->switchCamera();
+            camera_controller->switchCamera();
         }
         if (key == GLFW_KEY_B && action == GLFW_PRESS) {
-            cameraController->turnOnDebugCamera();
+            camera_controller->turnOnDebugCamera();
         } 
         if (key == GLFW_KEY_P && action == GLFW_PRESS) {
             // pause animation and resume
-            animationController->pauseOrResume();
+            animation_controller->pauseOrResume();
         } 
         if (key == GLFW_KEY_R && action == GLFW_PRESS) {
             // restart animation
-            animationController->restart();
+            animation_controller->restart();
         } 
     }
 private:
-    std::shared_ptr<CameraController> cameraController;
-    std::shared_ptr<AnimationController> animationController;
+    std::shared_ptr<CameraController> camera_controller;
+    std::shared_ptr<AnimationController> animation_controller;
     GLFWwindow *window;
 };

@@ -118,7 +118,7 @@ mat4 scaleMat(vec3 s) {
 }
 
 // Prepare a rotation matrix (from a quaternion)
-mat4 rotationMat(vec4 r) {
+mat4 rotationMat(qua r) {
     // float x = rotation[0];
     // float y = rotation[1];
     // float z = rotation[2];
@@ -155,55 +155,35 @@ mat4 rotationMat(vec4 r) {
     return m;
 }
 
-/* ---------------- Quad ---------------- */
 
-vec4 quaInv(const vec4& q){
-    // conjungate
-    vec4 r = -q;
-    r[3] *= -1;
+/* ------------------ Quaternion ------------------ */
+/** Convert euler angle to quaternion */
+qua eulerToQua(vec3 euler){ //pitch, yaw, roll
+//roll (x), pitch (y), yaw (z)
+    if (euler == vec3(0.0f, 0.0f, M_PI/2.0f) || euler == vec3(M_PI/2.0f, 0.0f, 0.0f))
+            return vec4(0.0f, 0.0f, -1.0f, 0.0f);
+        float c1 = std::cos(euler[2] * 0.5f);
+        float c2 = std::cos(euler[1] * 0.5f);
+        float c3 = std::cos(euler[0] * 0.5f);
+        float s1 = std::sin(euler[2] * 0.5f);
+        float s2 = std::sin(euler[1] * 0.5f);
+        float s3 = std::sin(euler[0] * 0.5f);
+        float x = c1 * c2 * s3 - s1 * s2 * c3;
+        float y = c1 * s2 * c3 + s1 * c2 * s3;
+        float z = s1 * c2 * c3 - c1 * s2 * s3;
+        float w = c1 * c2 * c3 + s1 * s2 * s3;
+        return qua(x, y, z, w);
+}
 
-    //unit
-    r.normalize();
-    return r;
+qua quaLerp(const qua qStart, const qua qEnd, float t) {
+    return qStart * (1.0f - t) + qEnd * t;
 }
 
 /** Return a quaternion given
 - @angle: rotation angle
 - @dir: rotation axis
 */
-vec4 angleAxis(const float& angle, const vec3& dir){
+qua angleAxis(const float& angle, const vec3& dir){
     float s = std::sin(angle * 0.5f);
-    return vec4(dir * s, std::cos(angle * 0.5f));
-}
-
-/** Quaternion multiplation
-*/
-
-vec4 quaMul(const vec4 l, const vec4 r) {
-    return vec4(l[1] * r[2] - l[2] * r[1] + l[0] * r[3] + l[3] * r[0], 
-                l[2] * r[0] - l[0] * r[2] + l[1] * r[3] + l[3] * r[1],
-		        l[0] * r[1] - l[1] * r[0] + l[2] * r[3] + l[3] * r[2], 
-                l[3] * r[3] - l[0] * r[0] - l[1] * r[1] - l[2] * r[2]);
-}
-
-/** Convert euler angle to quaternion */
-vec4 eulerToQua(vec3 euler){ //pitch, yaw, roll
-//roll (x), pitch (y), yaw (z)
-    if (euler == vec3(0.0f, 0.0f, M_PI/2.0f) || euler == vec3(M_PI/2.0f, 0.0f, 0.0f))
-			return vec4(0.0f, 0.0f, -1.0f, 0.0f);
-		float c1 = std::cos(euler[2] * 0.5f);
-		float c2 = std::cos(euler[1] * 0.5f);
-		float c3 = std::cos(euler[0] * 0.5f);
-		float s1 = std::sin(euler[2] * 0.5f);
-		float s2 = std::sin(euler[1] * 0.5f);
-		float s3 = std::sin(euler[0] * 0.5f);
-		float x = c1 * c2 * s3 - s1 * s2 * c3;
-		float y = c1 * s2 * c3 + s1 * c2 * s3;
-		float z = s1 * c2 * c3 - c1 * s2 * s3;
-		float w = c1 * c2 * c3 + s1 * s2 * s3;
-		return vec4(x, y, z, w);
-}
-
-vec4 quaLerp(const vec4 qStart, const vec4 qEnd, float t) {
-    return qStart * (1.0f - t) + qEnd * t;
+    return qua(dir * s, std::cos(angle * 0.5f));
 }

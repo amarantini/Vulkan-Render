@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <GLFW/glfw3.h>
 #include "mathlib.h"
-#include "scene.h"
+#include "camera.h"
 
 // Key mappings
 const int ROTATE_LEFT = GLFW_KEY_A;
@@ -24,12 +24,12 @@ public:
 
         cameras = cameras_;
         vec3 translation = cameras.begin()->second->transform->translation;
-        vec4 rotation = cameras.begin()->second->transform->rotation;
+        qua rotation = cameras.begin()->second->transform->rotation;
         std::shared_ptr<Transform> userCamTransform = std::make_shared<Transform>("User-Camera-Transform", translation, rotation, vec3(1));
         user_camera = std::make_shared<Camera>(width / (float) height, degToRad(45.0f), 0.1, 1000.0f);
         user_camera->movable = true;
         user_camera->transform = userCamTransform;
-        user_camera->euler = user_camera->getEuler();
+        user_camera->euler = user_camera->transform->rotation.toEuler();
         cameras["User-Camera"] = user_camera;
 
         std::shared_ptr<Transform> debugCamTransform = std::make_shared<Transform>("Debug-Camera-Transform", translation, rotation, vec3(1));
@@ -37,7 +37,7 @@ public:
         debug_camera->debug = true;
         debug_camera->movable = true;
         debug_camera->transform = debugCamTransform;
-        debug_camera->euler = debug_camera->getEuler();
+        debug_camera->euler = debug_camera->transform->rotation.toEuler();
         cameras["Debug-Camera"] = debug_camera;
 
         camera_itr = cameras.find("User-Camera");
@@ -77,7 +77,9 @@ public:
     }
 
     mat4 getPrevPerspective() {
-        return prev_camera->getPerspective(width / (float) height);
+        mat4 persp = prev_camera->getPerspective(width / (float) height);
+        persp[1][1] *= -1;
+        return persp;
     }
 
     mat4 getPrevView(){
@@ -99,16 +101,16 @@ public:
             if(std::fabs(deltaRoll) > FLT_EPSILON || std::fabs(deltaPitch) > FLT_EPSILON) {
                 // Use pitch, roll
                 // std::cout<<"Before roll: "<<roll<<"\n";
-                pitch += deltaTime * rotateSpeed * deltaPitch;
-                roll += deltaTime * rotateSpeed * deltaRoll;
+                pitch += deltaTime * rotation_speed * deltaPitch;
+                roll += deltaTime * rotation_speed * deltaRoll;
                 // std::cout<<"After roll: "<<roll<<"\n\n";
                 // roll = std::clamp(roll, -1.5f, 1.5f);
                 // std::cout<<"Clamp roll: "<<roll<<"\n";
                 curr_camera->transform->rotation = eulerToQua(curr_camera->euler);
 
                 // Use Quaternion
-                // deltaYaw = deltaTime * rotateSpeed * deltaYaw;
-                // deltaPitch = deltaTime * rotateSpeed * deltaPitch;
+                // deltaYaw = deltaTime * rotation_speed * deltaYaw;
+                // deltaPitch = deltaTime * rotation_speed * deltaPitch;
                 //  // deltaYaw = myClamp(deltaYaw, -1.5-yaw, 1.5-yaw);
                 // // deltaPitch = myClamp(deltaPitch, -1.5-pitch, 1.5-pitch);
                 // // vec4 qPitch = angleAxis(pitch, vec3(1, 0, 0));
@@ -136,7 +138,7 @@ public:
             if (glfwGetKey(window, MOVE_BACKWARD) == GLFW_PRESS) translation -= forward;
 
             if(translation.norm()>FLT_EPSILON) {
-                curr_camera->transform->translation += moveSpeed * deltaTime * translation.normalized();
+                curr_camera->transform->translation += move_speed * deltaTime * translation.normalized();
             }
         }
     }
@@ -156,13 +158,25 @@ public:
             camera_itr = cameras.begin();
         }
         curr_camera = camera_itr->second;
+        switched = true;
         std::cout<<"Switch to camera: "<<camera_itr->first<<"\n";
     }
 
+    bool isSwitched(){
+        return switched;
+    }
+
+    void resetSwitched(){
+        switched = false;
+    }
+
+    bool isMovable(){
+        return curr_camera->movable;
+    }
     
 private:
-    float moveSpeed = 2.0f;
-    float rotateSpeed = 1.0f;
+    float move_speed = 2.0f;
+    float rotation_speed = 1.0f;
     // double xpos, ypos;
     float height, width;
     GLFWwindow* window;
@@ -172,6 +186,6 @@ private:
     std::shared_ptr<Camera> debug_camera;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
     std::unordered_map<std::string, std::shared_ptr<Camera> >::iterator camera_itr;
-
+    bool switched = true;
     
 };
