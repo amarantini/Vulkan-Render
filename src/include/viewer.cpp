@@ -1,5 +1,8 @@
 #include "viewer.h"
 #include "controllers/animation_controller.h"
+#include "utils/constants.h"
+#include <cfloat>
+#include <memory>
 #include <stdexcept>
 
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger){
@@ -63,8 +66,10 @@ void ViewerApplication::setCulling(const std::string& culling_) {
     culling = culling_;
 }
 
-void ViewerApplication::setHeadless(bool _headless){
-    headless = _headless;
+void ViewerApplication::setHeadless(const std::string& event_file_name){
+    headless = true;
+    eventController = std::make_shared<EventsController>();
+    eventController->load(event_file_name);
 }
 
 void ViewerApplication::run(){
@@ -160,6 +165,7 @@ void ViewerApplication::mainLoop(){
         }
     } else {
         // Execute event
+        eventLoop();
     }
     
     vkDeviceWaitIdle(device);
@@ -259,6 +265,11 @@ void ViewerApplication::createInstance(){
     requiredExtensions.emplace_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
     requiredExtensions.emplace_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
     requiredExtensions.push_back(VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME);
+
+    std::cout<<"rerequired extensions:\n";
+    for(const auto& extension: requiredExtensions){
+        std::cout<<"\t"<<extension<<"\n";
+    }
     
     createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     
@@ -272,10 +283,10 @@ void ViewerApplication::createInstance(){
     
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
     
-//        std::cout<<"available extensions:\n";
-//        for(const auto& extensions: extensions){
-//            std::cout<<"\t"<<extensions.extensionName<<"\n";
-//        }
+    std::cout<<"available extensions:\n";
+    for(const auto& extensions: extensions){
+        std::cout<<"\t"<<extensions.extensionName<<"\n";
+    }
     
     if(vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS){
         throw std::runtime_error("failed to create instance!");
@@ -315,7 +326,7 @@ bool ViewerApplication::isDeviceSuitable(VkPhysicalDevice device){
         SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
-    
+
     VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
     
@@ -461,13 +472,17 @@ QueueFamilyIndices ViewerApplication::findQueueFamilies(VkPhysicalDevice device)
 
 /* ------------ Validation layer ------------ */
 std::vector<const char*> ViewerApplication::getRequiredExtensions(){
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
+    std::vector<const char*> extensions;
+    if(headless) {
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+    } else {
+        uint32_t glfwExtensionCount = 0;
+        const char** glfwExtensions;
 
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-    
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-    
+        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+        extensions =  std::vector<const char*>(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    }
+
     if(enableValidationLayers){
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -600,6 +615,13 @@ void ViewerApplication::createSwapChain() {
     createInfo.imageExtent = extent;
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    // Enable transfer source on swap chain images if supported
+	if (swapChainSupport.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+		createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	} else {
+        std::cout<<"Swap chain VK_IMAGE_USAGE_TRANSFER_SRC_BIT is not supported\n";
+    }
     
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
     uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
@@ -930,7 +952,7 @@ void ViewerApplication::createCommandBuffers() {
     }
 }
 
-void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = 0; // Optional
@@ -1013,7 +1035,7 @@ void ViewerApplication::drawFrame() {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE /*wait for all fences*/, UINT64_MAX /*disables the timeout*/);
     
     //2. Acquire an image from the swap chain
-    uint32_t imageIndex;
+    
     VkResult result = vkAcquireNextImageKHR(device,
                             swapChain,
                             UINT64_MAX,//timeout in nanoseconds for an image to become available
@@ -1033,7 +1055,7 @@ void ViewerApplication::drawFrame() {
     
     updateUniformBuffer(currentFrame);
 
-    recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
+    recordCommandBuffer(commandBuffers[currentFrame]);
     
     //4. Submit the recorded command buffer
     VkSubmitInfo submitInfo{};
@@ -1069,12 +1091,16 @@ void ViewerApplication::drawFrame() {
     
     result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-    if (!headless && (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowController->wasResized())) {
-        windowController->resetResized();
-        recreateSwapChain();
-    } else if (result != VK_SUCCESS) {
-        throw std::runtime_error("failed to present swap chain image!");
-    }
+    if(!headless) {
+        // only check result if not headless
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowController->wasResized()) {
+            windowController->resetResized();
+            recreateSwapChain();
+        } else if (result != VK_SUCCESS) {
+            throw std::runtime_error("failed to present swap chain image!");
+        }
+    } 
+    
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -1337,13 +1363,21 @@ void ViewerApplication::createImage(uint32_t width, uint32_t height, VkFormat fo
     vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-void ViewerApplication::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void ViewerApplication::transitionImageLayout(VkImage image, 
+            VkImageLayout oldLayout, 
+            VkImageLayout newLayout,
+            VkAccessFlags srcAccessMask,
+			VkAccessFlags dstAccessMask,
+			VkPipelineStageFlags srcStageMask,
+			VkPipelineStageFlags dstStageMask) {
     VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
     
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstAccessMask = dstAccessMask;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = image;
@@ -1353,28 +1387,33 @@ void ViewerApplication::transitionImageLayout(VkImage image, VkFormat format, Vk
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
     
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
+    
+    // VkPipelineStageFlags sourceStage;
+    // VkPipelineStageFlags destinationStage;
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    // if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    //     barrier.srcAccessMask = 0;
+    //     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    //     sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    //     destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    // } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    //     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    //     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else {
-        throw std::invalid_argument("unsupported layout transition!");
-    }
+    //     sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    //     destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    // } else if (oldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+    //     barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    //     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    // } else {
+    //     throw std::invalid_argument("unsupported layout transition!");
+    // }
     
     vkCmdPipelineBarrier(
         commandBuffer,
-        sourceStage /* pipeline stage the operations occur that should happen before the barrier */, destinationStage /* pipeline stage in which operations will wait on the barrier */,
+        srcStageMask /* pipeline stage the operations occur that should happen before the barrier */, 
+        dstStageMask /* pipeline stage in which operations will wait on the barrier */,
         0,
         0, nullptr,
         0, nullptr,
@@ -1501,6 +1540,228 @@ bool ViewerApplication::hasStencilComponent(VkFormat format) {
 }
 
 /* ------------------ Animation ------------------ */
-void ViewerApplication::setAnimationLoop(bool isLoop) {
+void ViewerApplication::setAnimationLoop() {
     animationController->activateLoop();
+}
+
+/* ------------------ For events processing ------------------ */
+void ViewerApplication::eventLoop() {
+    while(!eventController->isFinished()) {
+        Event& e = eventController->nextEvent();
+
+        if(e.type == EventType::AVAILABLE) {
+            animationController->driveAnimation(FRAME_TIME);
+            drawFrame();
+        } else if (e.type == EventType::PLAY) {
+            animationController->setPlaybackTimeRate(e.time, e.rate);
+        } else if (e.type == EventType::SAVE) {
+            saveMostRecentImage(IMG_STORAGE_PATH+e.filename);
+        } else if (e.type == EventType::MARK) {
+            std::cout<<"MARK "<<e.description_words<<"\n";
+        }
+    }
+}
+
+// Get the most-recently-rendered image in the swap chain
+void ViewerApplication::saveMostRecentImage(const std::string& filename) {
+    bool supportsBlit = true;
+
+    // Check blit support for source and destination
+    VkFormatProperties formatProps;
+
+    // Check if the device supports blitting from optimal images (the swapchain images are in optimal format)
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, swapChainImageFormat, &formatProps);
+    if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT)) {
+        std::cerr << "Device does not support blitting from optimal tiled images, using copy instead of blit!" << std::endl;
+        supportsBlit = false;
+    }
+
+    // Check if the device supports blitting to linear images
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProps);
+    if (!(formatProps.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+        std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
+        supportsBlit = false;
+    }
+
+    // Source for the copy is the last rendered swapchain image
+    VkImage srcImage = swapChainImages[imageIndex];
+
+    // Create the linear tiled destination image to copy to and to read the memory from
+    VkImageCreateInfo imageCreateInfo = {};
+    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    // Note that vkCmdBlitImage (if supported) will also do format conversions if the swapchain color format would differ
+    imageCreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageCreateInfo.extent.width = width;
+    imageCreateInfo.extent.height = height;
+    imageCreateInfo.extent.depth = 1;
+    imageCreateInfo.arrayLayers = 1;
+    imageCreateInfo.mipLevels = 1;
+    imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
+    imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Create the image
+    VkImage dstImage;
+    if(vkCreateImage(device, &imageCreateInfo, nullptr, &dstImage) != VK_SUCCESS){
+        throw std::runtime_error("failed to create image for screenshot!");
+    }
+    // Create memory to back up the image
+    VkMemoryRequirements memRequirements;
+    VkMemoryAllocateInfo memAllocInfo = {};
+    memAllocInfo.sType =VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memAllocInfo.allocationSize = memRequirements.size;
+
+    VkDeviceMemory dstImageMemory;
+    vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
+    memAllocInfo.allocationSize = memRequirements.size;
+    // Memory must be host visible to copy from
+    memAllocInfo.memoryTypeIndex = bufferHelper.findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if(vkAllocateMemory(device, &memAllocInfo, nullptr, &dstImageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate memory for screenshot!");
+    }
+    vkBindImageMemory(device, dstImage, dstImageMemory, 0);
+
+    // Do the actual blit from the swapchain image to our host visible destination image
+    
+    // Transition destination image to transfer destination layout
+    transitionImageLayout(dstImage, 
+                VK_IMAGE_LAYOUT_UNDEFINED, 
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                0,
+			    VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    // Transition swapchain image from present to transfer source layout
+    transitionImageLayout(srcImage, 
+                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_ACCESS_MEMORY_READ_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    // If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
+    VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
+    if (supportsBlit)
+    {
+        // Define the region to blit (we will blit the whole swapchain image)
+        VkOffset3D blitSize;
+        blitSize.x = width;
+        blitSize.y = height;
+        blitSize.z = 1;
+        VkImageBlit imageBlitRegion{};
+        imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageBlitRegion.srcSubresource.layerCount = 1;
+        imageBlitRegion.srcOffsets[1] = blitSize;
+        imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageBlitRegion.dstSubresource.layerCount = 1;
+        imageBlitRegion.dstOffsets[1] = blitSize;
+
+        // Issue the blit command
+        vkCmdBlitImage(
+            commandBuffer,
+            srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &imageBlitRegion,
+            VK_FILTER_NEAREST);
+    }
+    else
+    {
+        // Otherwise use image copy (requires us to manually flip components)
+        VkImageCopy imageCopyRegion{};
+        imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.srcSubresource.layerCount = 1;
+        imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.dstSubresource.layerCount = 1;
+        imageCopyRegion.extent.width = width;
+        imageCopyRegion.extent.height = height;
+        imageCopyRegion.extent.depth = 1;
+
+        // Issue the copy command
+        vkCmdCopyImage(
+            commandBuffer,
+            srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &imageCopyRegion);
+    }
+    bufferHelper.endSingleTimeCommands(commandBuffer);
+
+    // Transition destination image to general layout, which is the required layout for mapping the image memory later on
+    transitionImageLayout(dstImage, 
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_GENERAL,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_MEMORY_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+    // Transition back the swap chain image after the blit is done
+    transitionImageLayout(srcImage, 
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                VK_ACCESS_TRANSFER_READ_BIT,
+                VK_ACCESS_MEMORY_READ_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+			    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    
+
+    // vulkanDevice->flushCommandBuffer(copyCmd, queue);
+
+    // Get layout of the image (including row pitch)
+    VkImageSubresource subResource { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
+    VkSubresourceLayout subResourceLayout;
+    vkGetImageSubresourceLayout(device, dstImage, &subResource, &subResourceLayout);
+
+    // Map image memory so we can start copying from it
+    const char* data;
+    vkMapMemory(device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void**)&data);
+    data += subResourceLayout.offset;
+
+    std::ofstream file(filename, std::ios::out | std::ios::binary);
+
+    // ppm header
+    file << "P6\n" << width << "\n" << height << "\n" << 255 << "\n";
+
+    // If source is BGR (destination is always RGB) and we can't use blit (which does automatic conversion), we'll have to manually swizzle color components
+    bool colorSwizzle = false;
+    // Check if source is BGR
+    // Note: Not complete, only contains most common and basic BGR surface formats for demonstration purposes
+    if (!supportsBlit)
+    {
+        std::vector<VkFormat> formatsBGR = { VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM };
+        colorSwizzle = (std::find(formatsBGR.begin(), formatsBGR.end(), swapChainImageFormat) != formatsBGR.end());
+    }
+
+    // ppm binary pixel data
+    for (uint32_t y = 0; y < height; y++)
+    {
+        unsigned int *row = (unsigned int*)data;
+        for (uint32_t x = 0; x < width; x++)
+        {
+            if (colorSwizzle)
+            {
+                file.write((char*)row+2, 1);
+                file.write((char*)row+1, 1);
+                file.write((char*)row, 1);
+            }
+            else
+            {
+                file.write((char*)row, 3);
+            }
+            row++;
+        }
+        data += subResourceLayout.rowPitch;
+    }
+    file.close();
+
+    std::cout << "Screenshot saved to disk" << std::endl;
+
+    // Clean up resources
+    vkUnmapMemory(device, dstImageMemory);
+    vkFreeMemory(device, dstImageMemory, nullptr);
+    vkDestroyImage(device, dstImage, nullptr);
 }

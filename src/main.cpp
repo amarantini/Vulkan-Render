@@ -12,8 +12,6 @@
 #include "arg_parser.h"
 // #include "window_controller.h"
 #include "viewer.h"
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/quaternion.hpp>
 #include <memory>
 
 
@@ -45,11 +43,12 @@ int main(int argc, char ** argv) {
     arg_parser.add_option(DRAWING_SIZE, false, 2);
     //sets the culling mode. You may add additional culling modes when tackling extra goals
     arg_parser.add_option(CULLING, false, 1, CULLING_NONE, {CULLING_NONE, CULLING_FRUSTUM});
-    arg_parser.add_option(HEADLESS, false);
+    arg_parser.add_option(HEADLESS, false, 1);
     arg_parser.add_option(ANIMATION_LOOP, false, 0);
     arg_parser.parse(argc, argv);
 
-    std::string scene_file_path = SCENE_PATH + (*arg_parser.get_option(SCENE))[0];
+    std::string scene_file_path = (*arg_parser.get_option(SCENE))[0];
+    std::cout<<scene_file_path<<"\n";
     std::string camera;
     std::string physical_device;
     int w, h;
@@ -92,11 +91,12 @@ int main(int argc, char ** argv) {
     pt = arg_parser.get_option(HEADLESS);
     if(pt) {
         event_file_name = (*pt)[0];
-        app.setHeadless(true);
+        app.setHeadless(event_file_name);
+        app.setAnimationLoop();
     } 
     pt = arg_parser.get_option(ANIMATION_LOOP);
     if(pt) {
-        app.setAnimationLoop(true);
+        app.setAnimationLoop();
     } 
 
     
@@ -108,82 +108,4 @@ int main(int argc, char ** argv) {
     }
     
     return EXIT_SUCCESS;
-
-
-    // glm::mat4 glm_view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //eye position, center position and up axis
-    // std::cout<<"View: ";
-    // for(int i=0 ; i<4; i++){
-    //     for(int j=0; j<4; j++) {
-    //         std::cout<<glm_view[i][j]<<",";
-    //     }
-    //     std::cout<<"\n";
-    // }
-    // mat4 view = lookAt(vec3(2.0f, 2.0f, 2.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 1.0f));
-    // std::cout<<"My view: "<<view<<"\n";
-
-    // glm::mat4 glm_proj = glm::perspective(0.47109f, 800 / (float)450, 0.1f, 1000.0f); //45 degree vertical field-of-view, aspect ratio, near and far view planes
-    // glm_proj[1][1] *= -1;
-
-    // mat4 proj = perspective(0.47109f, 800 / (float) 450, 0.1f, 1000.0f);
-    // proj[1][1] *= -1;
-    // std::cout<<"Proj: ";
-    // for(int i=0 ; i<4; i++){
-    //     for(int j=0; j<4; j++) {
-    //         std::cout<<glm_proj[i][j]<<",";
-    //     }
-    //     std::cout<<"\n";
-    // }
-    // std::cout<<"My proj: "<<proj<<"\n";
-
-    // glm::mat4 glm_model = glm::rotate(glm::mat4(1.0f), 1.0f * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)); //existing transformation, rotation angle and rotation axis
-    // mat4 model = mat4(-0.0f,1,0,0,
-    //                 -1,-0.0f,0,0,
-    //                 0,0,1,0,
-    //                 0,0,0,1);
-    
-    // std::cout<<"Model: ";
-    // for(int i=0 ; i<4; i++){
-    //     for(int j=0; j<4; j++) {
-    //         std::cout<<glm_model[i][j]<<",";
-    //     }
-    //     std::cout<<"\n";
-    // }
-    // std::cout<<"My model: "<<model<<"\n";
-    // glm::vec4 result = glm_proj * glm_view * glm_model * glm::vec4(0.5f, 0.5f, 0.0f, 1.0);
-    // std::cout<<"Result: ";
-    // for(int j=0; j<4; j++) {
-    //     std::cout<<result[j]<<",";
-    // }
-    // std::cout<<"\n";
-
-    // vec4 myResult = proj * view * model * vec4(0.5f, 0.5f, 0.0f, 1.0);
-    // std::cout<<"My result: "<< myResult <<"\n";
-
-    // glm::mat4 a = glm_proj * glm_view;
-    // std::cout<<"proj * view: ";
-    // for(int i=0 ; i<4; i++){
-    //     for(int j=0; j<4; j++) {
-    //         std::cout<<a[i][j]<<",";
-    //     }
-    //     std::cout<<"\n";
-    // }
-    // mat4 my_a = proj * view;
-    // std::cout<<"My proj * view: "<< my_a <<"\n";
-
-    // glm::mat4 b = glm_proj * glm_view * glm_model;
-    // std::cout<<"proj * view * model: ";
-    // for(int i=0 ; i<4; i++){
-    //     for(int j=0; j<4; j++) {
-    //         std::cout<<b[i][j]<<",";
-    //     }
-    //     std::cout<<"\n";
-    // }
-    // mat4 my_b = proj * view *  model;
-    // std::cout<<"My proj * view * model: "<< my_b <<"\n";
-    
-    // std::cout<<"Size: \n";
-    // std::cout<<sizeof(glm::mat4)<<"\n";
-    // std::cout<<sizeof(mat4)<<"\n";
-    // std::cout<<sizeof(std::array<float,4>)<<"\n";
-    // std::cout<<sizeof(vec4)<<"\n";
 }

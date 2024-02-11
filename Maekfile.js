@@ -23,58 +23,114 @@ const maek = init_maek();
 //set default targets to build (can be overridden by command line options):
 maek.TARGETS = ["bin/viewer" + (maek.OS === "windows" ? ".exe" : "")];
 
-const VULKAN_SDK = process.env.VULKAN_SDK;
+// const VULKAN_SDK = process.env.VULKAN_SDK;
 const USER = process.env.USER;
+
+const srcInclude = ["-Isrc/include",  
+"-Isrc/include/controllers",  
+"-Isrc/include/scene",  
+"-Isrc/include/math",
+"-Isrc/include/utils",
+"-I/usr/local/include"];
+
+const srcIncludeWin = ["/Isrc/include",  
+"/Isrc/include/controllers",  
+"/Isrc/include/scene",  
+"/Isrc/include/math",
+"/Isrc/include/utils",
+"/I/usr/local/include"];
 
 //set compile flags (these can also be overridden per-task using the "options" parameter):
 if (maek.OS === "windows") {
-	maek.options.CPPFlags.push(
-		"/O2", //optimize
-		//include directories:
-		"/Isrc\include", 
-		//other flags:
-		"/DWIN32_LEAN_AND_MEAN", //make windows.h pollute the global namespace less
-		"/wd4100", //unreferenced formal parameter
-		"/wd4146", //-1U is unsigned
-		"/wd4201", //nameless struct/union
-		"/wd4840"  //string as variadic function argument
-	);
-} else if (maek.OS === "linux") {
-	maek.options.CPPFlags.push(
-		"-O2", //optimize
-		"-Isrc/include" //include directories
-	);
-	maek.options.LINKLibs.push(
-		//library path
-		"-lglfw",
-		"-lvulkan",
-		"-ldl",
-		"-lpthread",
-		"-lX11",
-		"-lXxf86vm",
-		"-lXrandr",
-		"-lXi"
-	);
-} else if (maek.OS === "macos") {
-	maek.options.CPPFlags.push(
-		// "-O2", //optimize
-		//include directories
-		"-Isrc/include",  
-		"-Isrc/include/controllers",  
-		"-Isrc/include/scene",  
-		"-Isrc/include/math",
-		"-Isrc/include/utils",
-		"-I/usr/local/include",
-		`-I${VULKAN_SDK}/macOS/include`,
-		`-I/Users/${USER}/Vulkan`
-	);
+	VULKAN_SDK = process.env.VULKAN_SDK || `${process.env.USERPROFILE}/VulkanSDK/1.3.275.0`;
+	console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
 
-	maek.options.LINKLibs.push(
-		//library path
+	maek.options.CPP = [
+		'cl.exe', '/nologo', '/EHsc', '/Z7', '/std:c++20', '/W4', '/WX', '/MD',
+		'/wd4100', //unused formal parameter
+		'/wd4201', //nameless struct/union
+		'/wd4146', //-1U is unsigned
+	];
+	maek.options.LINK = [
+		'link.exe', '/nologo',
+		'/SUBSYSTEM:CONSOLE', //yes, you don't need WinMain to use the win32 API (!)
+		'/DEBUG:FASTLINK', '/INCREMENTAL:NO'
+	];
+	maek.options.LINKLibs = [
+		'User32.lib',
+		`/LIBPATH:${VULKAN_SDK}/Lib`,
+		'vulkan-1.lib',
+	];
+	maek.options.CPPFlags = [
+		`/I${VULKAN_SDK}/Include`,
+		'/O2',
+		...srcIncludeWin
+	];
+} else if (maek.OS === "linux") {
+	VULKAN_SDK = process.env.VULKAN_SDK || `${process.env.HOME}/VulkanSDK/1.3.275.0/x86_64`;
+	console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
+
+	maek.options.CPP = ['g++', '-std=c++20', '-Wall', '-Werror', '-g'];
+	maek.options.LINK = ['g++', '-std=c++20', '-Wall', '-Werror', '-g'];
+
+	maek.options.CPPFlags = [
+		'-O2',
+		`-I${VULKAN_SDK}/include`,
+		...srcInclude //include directories
+	];
+
+	maek.options.LINKLibs = [
+		'-O2',
+		`-L${VULKAN_SDK}/lib`,
+		'-lX11',
+		`-lvulkan`,
 		"-lglfw",
-		"-lvulkan",
-		`-L${VULKAN_SDK}/macOS/lib`
-	);
+	];
+	// maek.options.LINKLibs.push(
+	// 	"-ldl",
+	// 	"-lpthread",
+	// 	"-lXxf86vm",
+	// 	"-lXrandr",
+	// 	"-lXi"
+	// );
+} else if (maek.OS === "macos") {
+	const fs = require('fs');
+	VULKAN_SDK = process.env.VULKAN_SDK; //|| `${process.env.HOME}/VulkanSDK/1.3.275.0/macOS`;
+	console.log(`Using VULKAN_SDK='${VULKAN_SDK}'; set VULKAN_SDK environment variable to override.`);
+
+	maek.options.CPP = ['clang++', '-std=c++20', '-Wall', '-Werror', '-g'];
+	maek.options.LINK = ['clang++', '-std=c++20', '-Wall', '-Werror', '-g'];
+
+	maek.options.CPPFlags = [
+		'-O2',
+		`-I${VULKAN_SDK}/include`,
+		`-I/Users/${USER}/Vulkan`,
+		//include directories
+		...srcInclude
+	];
+
+	maek.options.LINKLibs = [
+		`-L${VULKAN_SDK}/lib`,
+		`-lvulkan`,
+		'-framework', 'AppKit',
+		'-framework', 'QuartzCore',
+		"-lglfw",
+	];
+
+	// maek.options.CPPFlags.push(
+	// 	// "-O2", //optimize
+	// 	//include directories
+		
+	// 	`-I${VULKAN_SDK}/macOS/include`,
+	// 	`-I/Users/${USER}/Vulkan`
+	// );
+
+	// maek.options.LINKLibs.push(
+	// 	//library path
+	// 	"-lglfw",
+	// 	"-lvulkan",
+	// 	`-L${VULKAN_SDK}/macOS/lib`
+	// );
 }
 
 //call rules on the maek object to specify tasks.

@@ -219,7 +219,7 @@ struct Driver {
                 frame_idx = 0;
             }
         }
-        while(times[frame_idx+1]<t){
+        while(times[frame_idx+1]<frameTime){
             frame_idx++;
         }
         return false;
@@ -248,6 +248,14 @@ struct Driver {
             } // else TODO
         }
     }
+
+    void setPlaybackTime(float time) {
+        frameTime = time;
+        frame_idx = 0;
+        while(times[frame_idx+1]<frameTime){
+            frame_idx++;
+        }
+    }
 };
 
 struct ModelInfo {
@@ -268,7 +276,9 @@ public:
     std::vector<std::shared_ptr<Driver> > drivers;
 
     void init(const std::string& file_path) {
-        const JsonList jsonList = parseScene(file_path);
+        // file_path in the form scene/[folder]/scene.s72
+        const JsonList jsonList = parseScene(SCENE_PATH+file_path);
+        folder_path = file_path.substr(0, file_path.find("/")+1);
         loadScene(jsonList);
     }
 
@@ -286,13 +296,13 @@ private:
     std::vector<std::shared_ptr<Transform> > transforms;
     std::vector<std::shared_ptr<Mesh> > meshs;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
-    
+    std::string folder_path;
     
 
     JsonList parseScene(const std::string& file_path) {
         JsonParser parser;
         std::string output;
-        parser.load("./scene/sg-Articulation.s72", output);
+        parser.load(file_path, output);
 
         return parser.parse(output);
     }
@@ -326,7 +336,7 @@ private:
                 jmap["name"]->as_str().value(),
                 jmap["topology"]->as_str().value(),
                 jmap["count"]->as_num().value(),
-                pos["src"]->as_str().value(),
+                folder_path+pos["src"]->as_str().value(),
                 pos["offset"]->as_num().value(),
                 pos["stride"]->as_num().value()
         );

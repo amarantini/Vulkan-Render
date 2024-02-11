@@ -24,3 +24,8 @@ const std::string CHANEL_SCALE = "scale"; //3d
 const std::string INTERP_LINEAR = "LINEAR";
 
 const std::string SCENE_PATH = "./scene/";
+const std::string IMG_STORAGE_PATH = "./images/";
+
+
+const int FRAME_RATE = 30;
+const float FRAME_TIME = (1.0f / 30.0f); // in seconds

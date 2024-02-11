@@ -13,16 +13,13 @@
 //
 //  Created by qiru hu on 1/16/24.
 //
-
-
-#include "controllers/animation_controller.h"
 #define STB_IMAGE_IMPLEMENTATION
 // #include "stb_image.h"
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+// #define GLM_FORCE_RADIANS
+// #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+// #include <glm/glm.hpp>
+// #include <glm/gtc/matrix_transform.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -52,6 +49,7 @@
 #include "input_controller.h"
 #include "window_controller.h"
 #include "animation_controller.h"
+#include "events_controller.h"
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 450;
@@ -96,9 +94,9 @@ public:
 
     void setCulling(const std::string& culling_);
 
-    void setHeadless(bool _headless);
+    void setHeadless(const std::string& event_file_name);
 
-    void setAnimationLoop(bool isLoop);
+    void setAnimationLoop();
 
     void run();
 
@@ -110,6 +108,7 @@ private:
     std::shared_ptr<InputController> inputController;
     std::shared_ptr<WindowController> windowController;
     std::shared_ptr<AnimationController> animationController;
+    std::shared_ptr<EventsController> eventController;
 
     UniformBufferObject ubo = {};
 
@@ -133,6 +132,7 @@ private:
     std::vector<VkImage> swapChainImages;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
+    uint32_t imageIndex;
     
     std::vector<VkImageView> swapChainImageViews;
     
@@ -436,7 +436,7 @@ private:
     
     void createCommandBuffers();
     
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void recordCommandBuffer(VkCommandBuffer commandBuffer);
     
     void drawFrame();
     
@@ -474,7 +474,10 @@ private:
                     VkMemoryPropertyFlags properties, VkImage& image, 
                     VkDeviceMemory& imageMemory);
 
-    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void transitionImageLayout(VkImage image, 
+                    VkImageLayout oldLayout, VkImageLayout newLayout,
+                    VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask,
+			        VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask);
     
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     
@@ -494,7 +497,14 @@ private:
 
     bool hasStencilComponent(VkFormat format);
     
-    
+    /* ------------------ For events processing ------------------ */
+    void eventLoop();
+
+    // Save the most-recently-rendered image in the swap chain to file
+    // Take a screenshot from the current swapchain image
+    // Referenced from https://github.com/SaschaWillems/Vulkan/blob/master/examples/screenshot/screenshot.cpp
+    void saveMostRecentImage(const std::string& filename);
+
 };
 
 /* viewer_h */

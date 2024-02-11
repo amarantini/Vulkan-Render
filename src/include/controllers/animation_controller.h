@@ -49,4 +49,15 @@ public:
         }
     }
 
+    void setPlaybackTimeRate(float time, float rate){
+        if(rate == 0)
+            paused = true;
+        else if (rate == 1)
+            paused = false;
+
+        for(auto& driver: drivers){
+            driver->setPlaybackTime(time);
+        }
+    }
+
 };

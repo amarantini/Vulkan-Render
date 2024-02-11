@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <GLFW/glfw3.h>
-#include "math_util.h"
+#include "mathlib.h"
 #include "scene.h"
 
 // Key mappings
@@ -23,14 +23,16 @@ public:
         height = height_;
 
         cameras = cameras_;
-        std::shared_ptr<Transform> userCamTransform = std::make_shared<Transform>("User-Camera-Transform", vec3(3,7,2), vec4(0.117015,0.608748,0.77058,0.148123), vec3(1));
+        vec3 translation = cameras.begin()->second->transform->translation;
+        vec4 rotation = cameras.begin()->second->transform->rotation;
+        std::shared_ptr<Transform> userCamTransform = std::make_shared<Transform>("User-Camera-Transform", translation, rotation, vec3(1));
         user_camera = std::make_shared<Camera>(width / (float) height, degToRad(45.0f), 0.1, 1000.0f);
         user_camera->movable = true;
         user_camera->transform = userCamTransform;
         user_camera->euler = user_camera->getEuler();
         cameras["User-Camera"] = user_camera;
 
-        std::shared_ptr<Transform> debugCamTransform = std::make_shared<Transform>("Debug-Camera-Transform", vec3(3,7,2), vec4(0.117015,0.608748,0.77058,0.148123), vec3(1));
+        std::shared_ptr<Transform> debugCamTransform = std::make_shared<Transform>("Debug-Camera-Transform", translation, rotation, vec3(1));
         debug_camera = std::make_shared<Camera>(width / (float) height, degToRad(45.0f), 0.1, 1000.0f);
         debug_camera->debug = true;
         debug_camera->movable = true;
