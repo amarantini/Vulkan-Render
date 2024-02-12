@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cfloat>
 #include <string>
 #include <fstream>
+#include <map>
+#include <iostream>
 
 #include "constants.h"
 #include "bbox.h"
@@ -21,6 +24,7 @@ struct Mesh {
     LoadInfo normal_info;
     LoadInfo color_info;
     std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     Bbox bbox;
     bool single_file = true;
 
@@ -35,7 +39,9 @@ struct Mesh {
             loadMeshNormal();
             loadMeshColor();
         }
-        
+        std::cout<<vertices.size()<<"\n";
+        if(ENABLE_INDEX_BUFFER)
+            calculateIndices();
     }
 
     void loadMeshPosition(){
@@ -155,5 +161,39 @@ struct Mesh {
         }
 
         infile.close();
+    }
+
+    typedef std::pair<Vertex, uint32_t> VPair;
+    struct CmpClass
+    {
+        bool operator() (const Vertex& v1, const Vertex& v2) const
+        {
+            if (std::fabs(v1.pos[0]-v2.pos[0]) > FLT_EPSILON) return v1.pos[0] < v2.pos[0];
+            if (std::fabs(v1.pos[1]-v2.pos[1]) > FLT_EPSILON) return v1.pos[1] < v2.pos[1];
+            if (std::fabs(v1.pos[2]-v2.pos[2]) > FLT_EPSILON) return v1.pos[2] < v2.pos[2];
+            return false;
+        }
+    };
+    
+    void calculateIndices() {
+        std::map<Vertex, uint32_t, CmpClass> vertex_to_idx;
+        uint32_t idx = 0;
+        for(auto& v: vertices) {
+            auto itr = vertex_to_idx.find(v);
+            if(itr==vertex_to_idx.end()){
+                vertex_to_idx[v] = idx;
+                indices.push_back(idx++);
+            } else {
+                indices.push_back(itr->second);
+            }
+        }
+        
+        // std::vector<Vertex> new_vertices(vertex_to_idx.size());
+        vertices.resize(vertex_to_idx.size());
+        for(auto& [vertex, index]: vertex_to_idx){
+            vertices[index] = vertex;
+        }
+        // vertices = new_vertices;
+
     }
 };

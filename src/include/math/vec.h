@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cassert>
+#include <cfloat>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -316,5 +317,13 @@ inline vec<T,size> operator/(float s, vec<T,size> v) {
 typedef vec<float,2> vec2;
 typedef vec<float,3> vec3;
 typedef vec<float,4> vec4;
+
+inline bool operator==(vec3 l, vec3 r) {
+    for(size_t i=0; i<3; i++){
+        if(std::abs(l[i]-r[i])>FLT_EPSILON)
+            return false;
+    }
+	return true;
+}
 
 /* vec_h */

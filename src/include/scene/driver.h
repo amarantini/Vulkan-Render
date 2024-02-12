@@ -15,7 +15,7 @@ struct Driver {
     std::string interpolation;
     std::shared_ptr<Transform> transform;
     size_t frame_idx = 0;
-    bool loop = false;
+    bool loop = true;
     bool finished = false;
     float frame_time = 0.0f;
 
@@ -62,7 +62,7 @@ struct Driver {
         if(finished)
             return;
         if(isFinished(deltaTime)){
-            std::cout<<name<<" animation finished\n";
+            // std::cout<<name<<" animation finished\n";
             return;
         } else {
             if(interpolation==INTERP_LINEAR){

@@ -96,27 +96,33 @@ public:
 
     void setHeadless(const std::string& event_file_name);
 
-    void setAnimationLoop();
+    void disableAnimationLoop();
+
+    void enableMeasure();
 
     void run();
 
     void listPhysicalDevice();
 
 private:
-    Scene scene = {};
-    std::shared_ptr<CameraController> cameraController;
-    std::shared_ptr<InputController> inputController;
-    std::shared_ptr<WindowController> windowController;
-    std::shared_ptr<AnimationController> animationController;
-    std::shared_ptr<EventsController> eventController;
-
-    UniformBufferObject ubo = {};
+    std::vector<std::shared_ptr<ModelInfo>> modelInfos;
+    std::shared_ptr<CameraController> camera_controller;
+    std::shared_ptr<InputController> input_controller;
+    std::shared_ptr<WindowController> window_controller;
+    std::shared_ptr<AnimationController> animation_controller;
+    std::shared_ptr<EventsController> event_controller;
 
     std::string physical_device_name = "None";
     int width = WIDTH;
     int height = HEIGHT;
     bool headless = false;
     std::string culling = CULLING_NONE;
+    // For performance measuring
+    bool does_measure = false;
+    int frame_count = 0;
+    float total_time = 0.0f;
+
+    UniformBufferObject ubo = {};
     
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
@@ -265,8 +271,8 @@ private:
         // std::vector<uint16_t> indices
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory;
-        // VkBuffer indexBuffer;
-        // VkDeviceMemory indexBufferMemory;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
 
         VkModel() = default;
 
@@ -278,11 +284,17 @@ private:
         void cleanUp(){
             vkDestroyBuffer(device, vertexBuffer, nullptr);
             vkFreeMemory(device, vertexBufferMemory, nullptr);
+            if(ENABLE_INDEX_BUFFER) {
+                vkDestroyBuffer(device, indexBuffer, nullptr);
+                vkFreeMemory(device, indexBufferMemory, nullptr);
+            }
         }
 
         void load(){
             createVertexBuffer();
-            // createIndexBuffer();
+            if(ENABLE_INDEX_BUFFER) {
+                createIndexBuffer();
+            }
         }
 
         void updateModel() {
@@ -293,14 +305,17 @@ private:
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-            // vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-            // vkCmdDrawIndexed(commandBuffer,
-            //                  static_cast<uint32_t>(indices.size()),
-            //                  1,/*number of instances*/
-            //                  0,/*offset into the index buffer*/
-            //                  0,//offset to add to the indices
-            //                  0);//offset for instancing
+            if(ENABLE_INDEX_BUFFER) {
+                vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+                vkCmdDrawIndexed(commandBuffer,
+                                static_cast<uint32_t>(info->mesh->indices.size()),
+                                1,/*number of instances*/
+                                0,/*offset into the index buffer*/
+                                0,//offset to add to the indices
+                                0);//offset for instancing
+            }
             vkCmdDraw(commandBuffer, static_cast<uint32_t>(info->mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
         
         }
@@ -327,25 +342,25 @@ private:
             vkFreeMemory(device, stagingBufferMemory, nullptr);
         }
 
-        // void createIndexBuffer() {
-        //     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+        void createIndexBuffer() {
+            VkDeviceSize bufferSize = sizeof(info->mesh->indices[0]) * info->mesh->indices.size();
 
-        //     VkBuffer stagingBuffer;
-        //     VkDeviceMemory stagingBufferMemory;
-        //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+            VkBuffer stagingBuffer;
+            VkDeviceMemory stagingBufferMemory;
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
-        //     void* data;
-        //     vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        //     memcpy(data, indices.data(), (size_t) bufferSize);
-        //     vkUnmapMemory(device, stagingBufferMemory);
+            void* data;
+            vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, info->mesh->indices.data(), (size_t) bufferSize);
+            vkUnmapMemory(device, stagingBufferMemory);
 
-        //     createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+            createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
 
-        //     copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+            copyBuffer(stagingBuffer, indexBuffer, bufferSize);
 
-        //     vkDestroyBuffer(device, stagingBuffer, nullptr);
-        //     vkFreeMemory(device, stagingBufferMemory, nullptr);
-        // }
+            vkDestroyBuffer(device, stagingBuffer, nullptr);
+            vkFreeMemory(device, stagingBufferMemory, nullptr);
+        }
     };
 
     std::vector<VkModel> models;
@@ -503,7 +518,7 @@ private:
     // Save the most-recently-rendered image in the swap chain to file
     // Take a screenshot from the current swapchain image
     // Referenced from https://github.com/SaschaWillems/Vulkan/blob/master/examples/screenshot/screenshot.cpp
-    void saveMostRecentImage(const std::string& filename);
+    void screenshotSwapChain(const std::string& filename);
 
 };
 

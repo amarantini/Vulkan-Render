@@ -49,6 +49,12 @@ public:
         }
     }
 
+    void disableLoop() {
+        for(auto& driver: drivers){
+            driver->loop = false;
+        }
+    }
+
     void setPlaybackTimeRate(float time, float rate){
         if(rate == 0)
             paused = true;

@@ -11,6 +11,7 @@
 #include "constants.h"
 #include "arg_parser.h"
 // #include "window_controller.h"
+#include "include/utils/constants.h"
 #include "viewer.h"
 #include <memory>
 
@@ -44,7 +45,8 @@ int main(int argc, char ** argv) {
     //sets the culling mode. You may add additional culling modes when tackling extra goals
     arg_parser.add_option(CULLING, false, 1, CULLING_NONE, {CULLING_NONE, CULLING_FRUSTUM});
     arg_parser.add_option(HEADLESS, false, 1);
-    arg_parser.add_option(ANIMATION_LOOP, false, 0);
+    arg_parser.add_option(ANIMATION_NO_LOOP, false, 0);
+    arg_parser.add_option(MEASURE, false, 0);
     arg_parser.parse(argc, argv);
 
     std::string scene_file_path = (*arg_parser.get_option(SCENE))[0];
@@ -92,11 +94,14 @@ int main(int argc, char ** argv) {
     if(pt) {
         event_file_name = (*pt)[0];
         app.setHeadless(event_file_name);
-        app.setAnimationLoop();
     } 
-    pt = arg_parser.get_option(ANIMATION_LOOP);
+    pt = arg_parser.get_option(ANIMATION_NO_LOOP);
     if(pt) {
-        app.setAnimationLoop();
+        app.disableAnimationLoop();
+    } 
+    pt = arg_parser.get_option(MEASURE);
+    if(pt) {
+        app.enableMeasure();
     } 
 
     

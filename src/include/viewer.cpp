@@ -1,5 +1,6 @@
 #include "viewer.h"
 #include "controllers/animation_controller.h"
+#include "scene.h"
 #include "utils/constants.h"
 #include <cfloat>
 #include <memory>
@@ -37,13 +38,15 @@ struct SwapChainSupportDetails {
 };
 
 void ViewerApplication::setUpScene(const std::string& file_name){
+    Scene scene;
     scene.init(file_name);
-    cameraController = std::make_shared<CameraController>(scene.getAllCameras(), width, height);
-    animationController = std::make_shared<AnimationController>(scene.drivers);
+    camera_controller = std::make_shared<CameraController>(scene.getAllCameras(), width, height);
+    animation_controller = std::make_shared<AnimationController>(scene.drivers);
+    modelInfos = scene.modelInfos;
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
-    cameraController->setCamera(camera_name);
+    camera_controller->setCamera(camera_name);
 }
 
 void ViewerApplication::setPhysicalDevice(const std::string& _physical_device_name){
@@ -53,7 +56,7 @@ void ViewerApplication::setPhysicalDevice(const std::string& _physical_device_na
 void ViewerApplication::setDrawingSize(const int& w, const int& h){
     width = w;
     height = h;
-    cameraController->setHeightWdith(height, width);
+    camera_controller->setHeightWdith(height, width);
 }
 
 void ViewerApplication::setCulling(const std::string& culling_) {
@@ -62,19 +65,23 @@ void ViewerApplication::setCulling(const std::string& culling_) {
 
 void ViewerApplication::setHeadless(const std::string& event_file_name){
     headless = true;
-    eventController = std::make_shared<EventsController>();
-    eventController->load(event_file_name);
+    event_controller = std::make_shared<EventsController>();
+    event_controller->load(event_file_name);
+}
+
+void ViewerApplication::enableMeasure(){
+    does_measure = true;
 }
 
 void ViewerApplication::run(){
     if(!headless) {
-        windowController = std::make_shared<WindowController>();
-        windowController->initWindow(width, height);
-        inputController = std::make_shared<InputController>();
-        inputController->setCameraController(cameraController);
-        inputController->setAnimationController(animationController);
-        inputController->setKeyCallback(windowController->getWindow());
-        cameraController->setWindow(windowController->getWindow());
+        window_controller = std::make_shared<WindowController>();
+        window_controller->initWindow(width, height);
+        input_controller = std::make_shared<InputController>();
+        input_controller->setCameraController(camera_controller);
+        input_controller->setAnimationController(animation_controller);
+        input_controller->setKeyCallback(window_controller->getWindow());
+        camera_controller->setWindow(window_controller->getWindow());
     }
     initVulkan();
     mainLoop();
@@ -101,7 +108,7 @@ void ViewerApplication::listPhysicalDevice(){
 
 /* ---------------- Load models ---------------- */
 void ViewerApplication::createModels(){
-    for(auto info: scene.modelInfos){
+    for(auto info: modelInfos){
         models.emplace_back(info);
         models.back().load();
     }
@@ -113,7 +120,7 @@ void ViewerApplication::initVulkan(){
     createInstance();
     setupDebugMessenger(); 
     if(!headless) {
-        windowController->createSurface(instance, &surface);
+        window_controller->createSurface(instance, &surface);
     }
     else {
         createHeadlessSurface(instance, &surface);
@@ -146,14 +153,23 @@ void ViewerApplication::initVulkan(){
 void ViewerApplication::mainLoop(){
     if(!headless) {
         auto currentTime = std::chrono::high_resolution_clock::now();
-        while(!windowController->shouldClose()){
+        while(!window_controller->shouldClose()){
             glfwPollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
             float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(newTime - currentTime).count();
+            if(does_measure){
+                total_time += deltaTime;
+                ++frame_count;
+                std::cout<<"MEASURE frame "<<deltaTime<<"\n";
+                if(frame_count == MAX_FRAME_COUNT){
+                    std::cout<<"Total time: "<<total_time<<"\n";
+                    break;
+                }
+            }
             currentTime = newTime;
-            cameraController->moveCamera(deltaTime);
-            animationController->driveAnimation(deltaTime);
+            camera_controller->moveCamera(deltaTime);
+            animation_controller->driveAnimation(deltaTime);
 
             drawFrame();
         }
@@ -212,7 +228,7 @@ void ViewerApplication::cleanUp(){
     vkDestroyInstance(instance, nullptr);
 
     if(!headless) {
-        windowController->destroy();
+        window_controller->destroy();
     }
    
 }
@@ -573,7 +589,7 @@ VkExtent2D ViewerApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
         return capabilities.currentExtent;
     } else {
         if(!headless) {
-            windowController->getFramebufferSize(&width, &height);
+            window_controller->getFramebufferSize(&width, &height);
         } 
 
         VkExtent2D actualExtent = {
@@ -998,8 +1014,8 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
     } else if (culling == CULLING_FRUSTUM){
         // frustum culling
         mat4 VP;
-        if(cameraController->isDebug()) {
-            VP = cameraController->getPrevPerspective() * cameraController->getPrevView();
+        if(camera_controller->isDebug()) {
+            VP = camera_controller->getPrevPerspective() * camera_controller->getPrevView();
         } else {
             VP = ubo.proj * ubo.view;
         }
@@ -1087,8 +1103,8 @@ void ViewerApplication::drawFrame() {
 
     if(!headless) {
         // only check result if not headless
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || windowController->wasResized()) {
-            windowController->resetResized();
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_controller->wasResized()) {
+            window_controller->resetResized();
             recreateSwapChain();
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");
@@ -1141,7 +1157,7 @@ void ViewerApplication::cleanupSwapChain() {
 
 void ViewerApplication::recreateSwapChain() {
     int width = 0, height = 0;
-    windowController->getFramebufferSize(&width, &height);
+    window_controller->getFramebufferSize(&width, &height);
     
     vkDeviceWaitIdle(device);
 
@@ -1153,7 +1169,7 @@ void ViewerApplication::recreateSwapChain() {
     createFramebuffers();
 
     // update projection matrix
-    cameraController->setHeightWdith(swapChainExtent.height, swapChainExtent.width);
+    camera_controller->setHeightWdith(swapChainExtent.height, swapChainExtent.width);
 }
 
 
@@ -1209,13 +1225,13 @@ void ViewerApplication::createUniformBuffers() {
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
-    if(cameraController->isSwitched() || cameraController->isMovable()) {
-        ubo.proj = cameraController->getPerspective();
-        ubo.proj[1][1] *= -1;
-        ubo.view = cameraController->getView();
+    // if(camera_controller->isSwitched() || camera_controller->isMovable()) {
+    ubo.proj = camera_controller->getPerspective();
+    ubo.proj[1][1] *= -1;
+    ubo.view = camera_controller->getView();
        
-        cameraController->resetSwitched();
-    }
+        // camera_controller->resetSwitched();
+    // }
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
@@ -1538,32 +1554,43 @@ bool ViewerApplication::hasStencilComponent(VkFormat format) {
 }
 
 /* ------------------ Animation ------------------ */
-void ViewerApplication::setAnimationLoop() {
-    animationController->activateLoop();
+void ViewerApplication::disableAnimationLoop() {
+    animation_controller->disableLoop();
 }
 
 /* ------------------ For events processing ------------------ */
 void ViewerApplication::eventLoop() {
+    auto current_time_measure = std::chrono::high_resolution_clock::now();
     float currt_frame_time = 0;
-    while(!eventController->isFinished()) {
-        Event& e = eventController->nextEvent();
+    while(!event_controller->isFinished()) {
+        Event& e = event_controller->nextEvent();
         float time = e.ts / (float) 1e6;
-        animationController->driveAnimation(time - currt_frame_time);
+        animation_controller->driveAnimation(time - currt_frame_time);
         currt_frame_time = time;
         if(e.type == EventType::AVAILABLE) {
             drawFrame();
         } else if (e.type == EventType::PLAY) {
-            animationController->setPlaybackTimeRate(e.time, e.rate);
+            animation_controller->setPlaybackTimeRate(e.time, e.rate);
         } else if (e.type == EventType::SAVE) {
-            saveMostRecentImage(IMG_STORAGE_PATH+e.filename);
+            screenshotSwapChain(IMG_STORAGE_PATH+e.filename);
         } else if (e.type == EventType::MARK) {
             std::cout<<"MARK "<<e.description_words<<"\n";
         }
+        
+        if(does_measure){
+            auto new_time_measure = std::chrono::high_resolution_clock::now();
+            float delta_time = std::chrono::duration<float, std::chrono::seconds::period>(new_time_measure - current_time_measure).count();
+            std::cout<<"MEASURE frame "<<delta_time<<"\n";
+            current_time_measure = new_time_measure;
+            total_time += delta_time;
+        }
+        
     }
+    std::cout<<"Total time/fps: "<<total_time<<" / "<<total_time/MAX_FRAME_COUNT<<"\n";
 }
 
 // Get the most-recently-rendered image in the swap chain
-void ViewerApplication::saveMostRecentImage(const std::string& filename) {
+void ViewerApplication::screenshotSwapChain(const std::string& filename) {
     bool supportsBlit = true;
 
     // Check blit support for source and destination

@@ -45,8 +45,8 @@ void WindowController::getFramebufferSize(int* width, int* height){
 }
 
 void WindowController::framebufferResizeCallback(GLFWwindow* window, int width, int height)  {
-    auto windowController = reinterpret_cast<WindowController *>(glfwGetWindowUserPointer(window));
-    windowController->framebuffer_resized = true;
-    windowController->width = width;
-    windowController->height = height;
+    auto window_controller = reinterpret_cast<WindowController *>(glfwGetWindowUserPointer(window));
+    window_controller->framebuffer_resized = true;
+    window_controller->width = width;
+    window_controller->height = height;
 }
