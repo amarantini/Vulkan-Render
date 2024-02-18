@@ -158,16 +158,7 @@ public:
             camera_itr = cameras.begin();
         }
         curr_camera = camera_itr->second;
-        switched = true;
         std::cout<<"Switch to camera: "<<camera_itr->first<<"\n";
-    }
-
-    bool isSwitched(){
-        return switched;
-    }
-
-    void resetSwitched(){
-        switched = false;
     }
 
     bool isMovable(){
@@ -186,6 +177,5 @@ private:
     std::shared_ptr<Camera> debug_camera;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
     std::unordered_map<std::string, std::shared_ptr<Camera> >::iterator camera_itr;
-    bool switched = true;
     
 };

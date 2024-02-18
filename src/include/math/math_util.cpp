@@ -1,6 +1,7 @@
 
 #include <_types/_uint32_t.h>
 #include <algorithm>
+#include <cfloat>
 #include "math_util.h"
 
 /* ----------------- Vec -----------------*/
@@ -50,6 +51,8 @@ float degToRad(float degree) {
 vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/){
     return start + (end - start) * t;
 }
+
+
 
 /* ---------------- Transform ---------------- */
 
@@ -177,6 +180,19 @@ qua eulerToQua(vec3 euler){ //pitch, yaw, roll
 
 qua quaLerp(const qua qStart, const qua qEnd, float t) {
     return qStart * (1.0f - t) + qEnd * t;
+}
+
+// Slerp for quaternions
+// Referenced Scotter3D
+qua slerp(qua qStart, qua qEnd, float t /* a fraction of 1*/){
+    float cosHalfTheta = dot(qStart.toVec(), qEnd.toVec());
+    qua q = cosHalfTheta < 0 ? -qStart : qStart;
+    if (std::abs(cosHalfTheta) >= 1.0f - FLT_EPSILON) {
+		return (1.0f - t) * q + t * qEnd;
+	}
+
+	float halfTheta = std::acos(std::abs(cosHalfTheta));
+	return (std::sin((1.0f - t) * halfTheta) * q + std::sin(t * halfTheta) * qEnd) * (1.0f / std::sin(halfTheta));
 }
 
 /** Return a quaternion given

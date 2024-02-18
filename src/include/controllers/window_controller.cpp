@@ -1,6 +1,7 @@
 #include "window_controller.h"
 #include <memory>
 #include <chrono>
+#include <string>
 
 bool WindowController::shouldClose() { 
     return glfwWindowShouldClose(window); 
@@ -19,6 +20,12 @@ void WindowController::initWindow(float width, float height){
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+
+    const GLFWvidmode * mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+
+    if(width>mode->width || height>mode->height) {
+        throw std::runtime_error("Invalid width height. Max width height is "+std::to_string(mode->width)+" "+std::to_string(mode->height));
+    }
 
     window = glfwCreateWindow(width,height,"Vulkan", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);

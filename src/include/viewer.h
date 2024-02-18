@@ -315,8 +315,10 @@ private:
                                 0,/*offset into the index buffer*/
                                 0,//offset to add to the indices
                                 0);//offset for instancing
+            } else {
+                vkCmdDraw(commandBuffer, static_cast<uint32_t>(info->mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
             }
-            vkCmdDraw(commandBuffer, static_cast<uint32_t>(info->mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
+            
         
         }
 
@@ -364,6 +366,7 @@ private:
     };
 
     std::vector<VkModel> models;
+    int vertices_count = 0;
 
     /* ---------------- Load models ---------------- */
     void createModels();

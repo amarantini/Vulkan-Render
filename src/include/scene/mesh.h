@@ -39,7 +39,6 @@ struct Mesh {
             loadMeshNormal();
             loadMeshColor();
         }
-        std::cout<<vertices.size()<<"\n";
         if(ENABLE_INDEX_BUFFER)
             calculateIndices();
     }

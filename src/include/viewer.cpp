@@ -111,7 +111,9 @@ void ViewerApplication::createModels(){
     for(auto info: modelInfos){
         models.emplace_back(info);
         models.back().load();
+        vertices_count += models.back().info->mesh->vertices.size();
     }
+    std::cout<<"Total vertices count: "<<vertices_count<<"\n";
 }
 
 /** ---------------- main steps ---------------- */
@@ -599,7 +601,6 @@ VkExtent2D ViewerApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 
         actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
         actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
         return actualExtent;
     }
 }
@@ -1225,13 +1226,9 @@ void ViewerApplication::createUniformBuffers() {
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
-    // if(camera_controller->isSwitched() || camera_controller->isMovable()) {
     ubo.proj = camera_controller->getPerspective();
     ubo.proj[1][1] *= -1;
     ubo.view = camera_controller->getView();
-       
-        // camera_controller->resetSwitched();
-    // }
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
@@ -1562,31 +1559,34 @@ void ViewerApplication::disableAnimationLoop() {
 void ViewerApplication::eventLoop() {
     auto current_time_measure = std::chrono::high_resolution_clock::now();
     float currt_frame_time = 0;
+    float last_ts;
     while(!event_controller->isFinished()) {
         Event& e = event_controller->nextEvent();
         float time = e.ts / (float) 1e6;
-        animation_controller->driveAnimation(time - currt_frame_time);
-        currt_frame_time = time;
         if(e.type == EventType::AVAILABLE) {
+            animation_controller->driveAnimation(time - currt_frame_time);
+            currt_frame_time = time;
             drawFrame();
         } else if (e.type == EventType::PLAY) {
-            animation_controller->setPlaybackTimeRate(e.time, e.rate);
+            animation_controller->setPlaybackTimeRate(time, e.rate);
         } else if (e.type == EventType::SAVE) {
             screenshotSwapChain(IMG_STORAGE_PATH+e.filename);
         } else if (e.type == EventType::MARK) {
             std::cout<<"MARK "<<e.description_words<<"\n";
         }
         
-        if(does_measure){
+        if(does_measure && last_ts != e.ts){
             auto new_time_measure = std::chrono::high_resolution_clock::now();
             float delta_time = std::chrono::duration<float, std::chrono::seconds::period>(new_time_measure - current_time_measure).count();
             std::cout<<"MEASURE frame "<<delta_time<<"\n";
             current_time_measure = new_time_measure;
             total_time += delta_time;
+            last_ts=e.ts;
         }
         
     }
-    std::cout<<"Total time/fps: "<<total_time<<" / "<<total_time/MAX_FRAME_COUNT<<"\n";
+    if(does_measure)
+        std::cout<<"Total time: "<<total_time<<"\n";
 }
 
 // Get the most-recently-rendered image in the swap chain

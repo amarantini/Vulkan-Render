@@ -24,14 +24,16 @@ const std::string CHANEL_ROTATION = "rotation"; //4d
 const std::string CHANEL_SCALE = "scale"; //3d
 // animation interpolation 
 const std::string INTERP_LINEAR = "LINEAR";
+const std::string INTERP_SLERP = "SLERP";
+const std::string INTERP_STEP = "STEP";
 
 const std::string SCENE_PATH = "../scene/";
-const std::string IMG_STORAGE_PATH = "./images/";
+const std::string IMG_STORAGE_PATH = "../images/";
 
 
 const int FRAME_RATE = 30;
 const float FRAME_TIME = (1.0f / 30.0f); // in seconds
 
 // Performance testing
-static bool ENABLE_INDEX_BUFFER = false;
+static bool ENABLE_INDEX_BUFFER = true;
 const int MAX_FRAME_COUNT = 800;

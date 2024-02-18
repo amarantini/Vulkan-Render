@@ -58,6 +58,24 @@ struct Driver {
         }
     }
 
+    void sphericalInterp() {
+        float t = (frame_time-times[frame_idx])/(times[frame_idx+1]-times[frame_idx]);
+        if(channel != CHANEL_ROTATION) {
+            throw std::runtime_error("slerp only for rotation (quaternion)");
+        }
+        transform->rotation = slerp(values4d[frame_idx], values4d[frame_idx+1], t);
+    }
+
+    void stepInterp() {
+        if(channel==CHANEL_SCALE){
+            transform->scale = values3d[frame_idx];
+        } else if (channel==CHANEL_TRANSLATION){
+            transform->translation = values3d[frame_idx];
+        } else if (channel==CHANEL_ROTATION){
+            transform->rotation = values4d[frame_idx];
+        }
+    }
+
     void animate(const float deltaTime){
         if(finished)
             return;
@@ -67,7 +85,11 @@ struct Driver {
         } else {
             if(interpolation==INTERP_LINEAR){
                 linearInterp();
-            } // else TODO
+            } else if(interpolation==INTERP_SLERP){
+                sphericalInterp();
+            } else if (interpolation==INTERP_STEP){
+                stepInterp();
+            }
         }
     }
 
