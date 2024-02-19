@@ -36,4 +36,4 @@ objs/
 # shaders
 *.spv
 
-*.DS_Store
+.DS_Store
