@@ -37,3 +37,16 @@ const float FRAME_TIME = (1.0f / 30.0f); // in seconds
 // Performance testing
 static bool ENABLE_INDEX_BUFFER = true;
 const int MAX_FRAME_COUNT = 800;
+
+// Shader paths
+const std::string SIMPLE_VSHADER = "./src/shaders/simple.vert.spv";
+const std::string SIMPLE_FSHADER = "./src/shaders/simple.frag.spv";
+
+const std::string ENV_VSHADER = "./src/shaders/skybox.vert.spv";
+const std::string ENV_FSHADER = "./src/shaders/skybox.frag.spv";
+
+const std::string MIRROR_VSHADER = "./src/shaders/mirror.vert.spv";
+const std::string MIRROR_FSHADER = "./src/shaders/mirror.frag.spv";
+
+const std::string LAMBER_VSHADER = "./src/shaders/lamber.vert.spv";
+const std::string LAMBER_FSHADER = "./src/shaders/lamber.frag.spv";

@@ -1,26 +1,12 @@
 #include "viewer.h"
-#include "controllers/animation_controller.h"
-#include "scene.h"
 #include "utils/constants.h"
+#include "vk/vk_debug.h"
 #include <cfloat>
 #include <memory>
 #include <stdexcept>
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger){
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-    if(func != nullptr){
-        return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-    } else {
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-    }
-}
-
-void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator){
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if(func != nullptr){
-        func(instance, debugMessenger, pAllocator);
-    }
-}
+#define STB_IMAGE_IMPLEMENTATION
+#include "utils/stb_image.h"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -41,8 +27,8 @@ void ViewerApplication::setUpScene(const std::string& file_name){
     Scene scene;
     scene.init(file_name);
     camera_controller = std::make_shared<CameraController>(scene.getAllCameras(), width, height);
-    animation_controller = std::make_shared<AnimationController>(scene.drivers);
-    modelInfos = scene.modelInfos;
+    animation_controller = std::make_shared<AnimationController>(scene.getDrivers());
+    modelInfos = scene.getModelInfos();
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
@@ -141,10 +127,9 @@ void ViewerApplication::initVulkan(){
     // createTextureImage();
     // createTextureImageView();
     // createTextureSampler();
-    // TODO: create models
+
     createModels();
-    // createVertexBuffer();
-    // createIndexBuffer();
+
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
@@ -198,14 +183,9 @@ void ViewerApplication::cleanUp(){
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
     
-    // TODO: Destroy VkModel
     for(VkModel& model: models){
-        model.cleanUp();
+        model.destroy();
     }
-    // vkDestroyBuffer(device, indexBuffer, nullptr);
-    // vkFreeMemory(device, indexBufferMemory, nullptr);
-    // vkDestroyBuffer(device, vertexBuffer, nullptr);
-    // vkFreeMemory(device, vertexBufferMemory, nullptr);
     
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -223,7 +203,7 @@ void ViewerApplication::cleanUp(){
     vkDestroyDevice(device, nullptr);
 
     if (enableValidationLayers) {
-        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        vk::DestroyDebugUtilsMessengerEXT(instance, nullptr);
     }
 
     vkDestroySurfaceKHR(instance, surface, nullptr);
@@ -322,7 +302,7 @@ void ViewerApplication::setupDebugMessenger(){
     VkDebugUtilsMessengerCreateInfoEXT createInfo;
     populateDebugMessengerCreateInfo(createInfo);
     
-    if(CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger)!=VK_SUCCESS){
+    if(vk::CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr)!=VK_SUCCESS){
         throw std::runtime_error("fail to set up debug messenger!");
     }
 }
@@ -670,33 +650,14 @@ void ViewerApplication::createImageViews(){
     swapChainImageViews.resize(swapChainImages.size());
     
     for(size_t i=0; i<swapChainImages.size(); i++){
-        swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+        swapChainImageViews[i] = vkHelper.createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 
 /* ------------- Graphics Pipeline ------------- */
 void ViewerApplication::createGraphicsPipeline() {
     // Programmable shader stages
-    // TODO: readFile using relative path irrespective of the executable running directory
-    auto vertShaderCode = readFile("./src/shaders/vert.spv");
-    auto fragShaderCode = readFile("./src/shaders/frag.spv");
-    
-    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
-    
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
-    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShaderModule;
-    vertShaderStageInfo.pName = "main";
-    
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-    
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
     
     std::vector<VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -800,8 +761,6 @@ void ViewerApplication::createGraphicsPipeline() {
     
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.minDepthBounds = 0.0f; // Optional
@@ -812,7 +771,7 @@ void ViewerApplication::createGraphicsPipeline() {
     
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
+    pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
     pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -827,28 +786,24 @@ void ViewerApplication::createGraphicsPipeline() {
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
     pipelineInfo.basePipelineIndex = -1; // Optional
+
+    // Skybox pipeline
+    shaderStages[0] = loadShader(ENV_VSHADER, device, VK_SHADER_STAGE_VERTEX_BIT); 
+    shaderStages[1] = loadShader(ENV_FSHADER, device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelines.skybox), "Failed to create simple pipeline!");
+
+    // Simple pipeline
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    shaderStages[0] = loadShader(SIMPLE_VSHADER, device, VK_SHADER_STAGE_VERTEX_BIT); 
+    shaderStages[1] = loadShader(SIMPLE_FSHADER, device, VK_SHADER_STAGE_FRAGMENT_BIT);
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelines.simple), "Failed to create simple pipeline!");
     
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create graphics pipeline!");
-    }
-    
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    // vkDestroyShaderModule(device, fragShaderModule, nullptr);
+    // vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-VkShaderModule ViewerApplication::createShaderModule(const std::vector<char>& code) {
-    VkShaderModuleCreateInfo createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-    
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create shader module!");
-    }
-    
-    return shaderModule;
-}
+
 
 void ViewerApplication::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
@@ -1219,7 +1174,7 @@ void ViewerApplication::createUniformBuffers() {
     uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        bufferHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        vkHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
 
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
@@ -1306,222 +1261,68 @@ void ViewerApplication::createDescriptorSets() {
     }
 }
 
-/* ------------------- Texture mapping ------------------- */
-// void createTextureImage() {
-//     int texWidth, texHeight, texChannels;
-//     // TODO: readFile using relative path irrespective of the executable running directory
-//     stbi_uc* pixels = stbi_load("./textures/texture.jpeg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-//     VkDeviceSize imageSize = texWidth * texHeight * 4;
 
-//     if (!pixels) {
-//         throw std::runtime_error("failed to load texture image!");
-//     }
-    
-//     VkBuffer stagingBuffer;
-//     VkDeviceMemory stagingBufferMemory;
-//     createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-    
-//     void* data;
-//     vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
-//         memcpy(data, pixels, static_cast<size_t>(imageSize));
-//     vkUnmapMemory(device, stagingBufferMemory);
-    
-//     stbi_image_free(pixels);
-    
-//     createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
-    
-//     transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-//     copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-    
-//     transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    
-//     vkDestroyBuffer(device, stagingBuffer, nullptr);
-//     vkFreeMemory(device, stagingBufferMemory, nullptr);
-// }
 
-void ViewerApplication::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = format;
-    imageInfo.tiling = tiling;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = usage;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create image!");
+
+
+
+
+
+
+
+
+/* ------------ Texture  ------------ */
+
+void ViewerApplication::Texture::createTextureImage(const char* texture_file_path) {
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load(texture_file_path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+    if (!pixels) {
+        throw std::runtime_error("failed to load texture image!");
     }
-
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(device, image, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = bufferHelper.findMemoryType(memRequirements.memoryTypeBits, properties);
-
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate image memory!");
-    }
-
-    vkBindImageMemory(device, image, imageMemory, 0);
-}
-
-void ViewerApplication::transitionImageLayout(VkImage image, 
-            VkImageLayout oldLayout, 
-            VkImageLayout newLayout,
-            VkAccessFlags srcAccessMask,
-			VkAccessFlags dstAccessMask,
-			VkPipelineStageFlags srcStageMask,
-			VkPipelineStageFlags dstStageMask) {
-    VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
     
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcAccessMask = srcAccessMask;
-    barrier.dstAccessMask = dstAccessMask;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    vkHelper.createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
     
+    void* data;
+    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+        memcpy(data, pixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingBufferMemory);
     
-    // VkPipelineStageFlags sourceStage;
-    // VkPipelineStageFlags destinationStage;
-
-    // if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-    //     barrier.srcAccessMask = 0;
-    //     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-    //     sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    //     destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    // } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-    //     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    //     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    //     sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    //     destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    // } else if (oldLayout == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-    //     barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    //     barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    // } else {
-    //     throw std::invalid_argument("unsupported layout transition!");
-    // }
+    stbi_image_free(pixels);
     
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        srcStageMask /* pipeline stage the operations occur that should happen before the barrier */, 
-        dstStageMask /* pipeline stage in which operations will wait on the barrier */,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
-    );
-
-    bufferHelper.endSingleTimeCommands(commandBuffer);
-}
-
-void ViewerApplication::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-    VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
+    vkHelper.createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
     
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {
-        width,
-        height,
-        1
-    };
-    vkCmdCopyBufferToImage(
-        commandBuffer,
-        buffer,
-        image,
+    vkHelper.transitionImageLayout(textureImage, 
+        VK_IMAGE_LAYOUT_UNDEFINED, 
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1,
-        &region
-    );
-
-    bufferHelper.endSingleTimeCommands(commandBuffer);
+        0,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT);
+    copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    
+    vkHelper.transitionImageLayout(textureImage,
+    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    VK_ACCESS_TRANSFER_WRITE_BIT,
+    VK_ACCESS_SHADER_READ_BIT,
+    VK_PIPELINE_STAGE_TRANSFER_BIT,
+    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
-VkImageView ViewerApplication::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = format;
-    viewInfo.subresourceRange.aspectMask = aspectFlags;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
 
-    VkImageView imageView;
-    if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create image view!");
-    }
-
-    return imageView;
-}
-
-// void createTextureImageView() {
-//     textureImageView = createImageView(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-// }
-
-/* ------------ Texture Sampler ------------ */
-// void createTextureSampler() {
-//     VkSamplerCreateInfo samplerInfo{};
-//     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-//     samplerInfo.magFilter = VK_FILTER_LINEAR; //oversampling
-//     samplerInfo.minFilter = VK_FILTER_LINEAR; //undersampling
-//     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-//     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-//     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-//     samplerInfo.anisotropyEnable = VK_TRUE;
-    
-//     VkPhysicalDeviceProperties properties{};
-//     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-//     samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-//     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-//     samplerInfo.unnormalizedCoordinates = VK_FALSE;
-//     samplerInfo.compareEnable = VK_FALSE;
-//     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-//     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-//     samplerInfo.mipLodBias = 0.0f;
-//     samplerInfo.minLod = 0.0f;
-//     samplerInfo.maxLod = 0.0f;
-    
-//     if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
-//             throw std::runtime_error("failed to create texture sampler!");
-//         }
-// }
 
 /* ------------------ Defth Buffer ------------------ */
 void ViewerApplication::createDepthResources() {
     VkFormat depthFormat = findDepthFormat();
-    createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
-    depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+    vkHelper.createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
+    depthImageView = vkHelper.createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 }      
 
 VkFormat ViewerApplication::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
@@ -1643,7 +1444,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
     vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
     memAllocInfo.allocationSize = memRequirements.size;
     // Memory must be host visible to copy from
-    memAllocInfo.memoryTypeIndex = bufferHelper.findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    memAllocInfo.memoryTypeIndex = vkHelper.findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     if(vkAllocateMemory(device, &memAllocInfo, nullptr, &dstImageMemory) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate memory for screenshot!");
     }
@@ -1652,7 +1453,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
     // Do the actual blit from the swapchain image to our host visible destination image
     
     // Transition destination image to transfer destination layout
-    transitionImageLayout(dstImage, 
+    vkHelper.transitionImageLayout(dstImage, 
                 VK_IMAGE_LAYOUT_UNDEFINED, 
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 0,
@@ -1661,7 +1462,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
 			    VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // Transition swapchain image from present to transfer source layout
-    transitionImageLayout(srcImage, 
+    vkHelper.transitionImageLayout(srcImage, 
                 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
 			    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_ACCESS_MEMORY_READ_BIT,
@@ -1670,7 +1471,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
 			    VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
-    VkCommandBuffer commandBuffer = bufferHelper.beginSingleTimeCommands();
+    VkCommandBuffer commandBuffer = vkHelper.beginSingleTimeCommands();
     if (supportsBlit)
     {
         // Define the region to blit (we will blit the whole swapchain image)
@@ -1715,10 +1516,10 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
             1,
             &imageCopyRegion);
     }
-    bufferHelper.endSingleTimeCommands(commandBuffer);
+    vkHelper.endSingleTimeCommands(commandBuffer);
 
     // Transition destination image to general layout, which is the required layout for mapping the image memory later on
-    transitionImageLayout(dstImage, 
+    vkHelper.transitionImageLayout(dstImage, 
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_GENERAL,
                 VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -1727,7 +1528,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
 			    VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     // Transition back the swap chain image after the blit is done
-    transitionImageLayout(srcImage, 
+    vkHelper.transitionImageLayout(srcImage, 
                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
                 VK_ACCESS_TRANSFER_READ_BIT,

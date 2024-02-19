@@ -10,7 +10,6 @@
 
 #include "constants.h"
 #include "arg_parser.h"
-// #include "window_controller.h"
 #include "include/utils/constants.h"
 #include "viewer.h"
 #include <memory>

@@ -10,7 +10,7 @@ private:
     bool paused = false;
 
 public:
-    AnimationController(std::vector<std::shared_ptr<Driver> >& drivers_)
+    AnimationController(std::vector<std::shared_ptr<Driver> > drivers_)
     {
         for(auto& driver: drivers_){
             drivers.push_back(std::move(driver));

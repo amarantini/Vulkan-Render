@@ -31,6 +31,7 @@ const srcInclude = ["-Isrc/include",
 "-Isrc/include/scene",  
 "-Isrc/include/math",
 "-Isrc/include/utils",
+"-Isrc/include/vk",
 "-I/usr/local/include"];
 
 const srcIncludeWin = ["/Isrc/include",  
@@ -38,6 +39,7 @@ const srcIncludeWin = ["/Isrc/include",
 "/Isrc/include/scene",  
 "/Isrc/include/math",
 "/Isrc/include/utils",
+"/src/include/vk",
 "/I/usr/local/include"];
 
 //set compile flags (these can also be overridden per-task using the "options" parameter):
