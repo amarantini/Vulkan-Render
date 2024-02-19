@@ -65,5 +65,7 @@ mat4 rotationMat(qua r);
 qua eulerToQua(vec3 euler);
 // Linear interpolation between 2 quaternions
 qua quaLerp(const qua qStart, const qua qEnd, float t);
+// Spherical interpolation between 2 quaternons 
+qua slerp(const qua qStart, const qua qEnd, float t /* a fraction of 1*/);
 // Return a quaternion from an angle and a axis
 qua angleAxis(const float& angle, const vec3& dir);

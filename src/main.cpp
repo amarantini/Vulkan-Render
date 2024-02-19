@@ -7,13 +7,12 @@
 #include <iostream>
 #include <cassert>
 #include <cstdint>
+#include <memory>
 
 #include "constants.h"
 #include "arg_parser.h"
-// #include "window_controller.h"
-#include "include/utils/constants.h"
 #include "viewer.h"
-#include <memory>
+
 
 
 
@@ -45,8 +44,11 @@ int main(int argc, char ** argv) {
     //sets the culling mode. You may add additional culling modes when tackling extra goals
     arg_parser.add_option(CULLING, false, 1, CULLING_NONE, {CULLING_NONE, CULLING_FRUSTUM});
     arg_parser.add_option(HEADLESS, false, 1);
+    //disable animation looping
     arg_parser.add_option(ANIMATION_NO_LOOP, false, 0);
+    //enable measurement of frame time
     arg_parser.add_option(MEASURE, false, 0);
+    
     arg_parser.parse(argc, argv);
 
     std::string scene_file_path = (*arg_parser.get_option(SCENE))[0];
@@ -55,7 +57,7 @@ int main(int argc, char ** argv) {
     std::string physical_device;
     int w, h;
     std::string culling_mode = "none";
-    [[maybe_unused]] std::string event_file_name;
+    std::string event_file_name;
 
     ViewerApplication app;
 

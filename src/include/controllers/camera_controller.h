@@ -99,36 +99,11 @@ public:
             float& roll = curr_camera->euler[2];
             
             if(std::fabs(deltaRoll) > FLT_EPSILON || std::fabs(deltaPitch) > FLT_EPSILON) {
-                // Use pitch, roll
-                // std::cout<<"Before roll: "<<roll<<"\n";
                 pitch += deltaTime * rotation_speed * deltaPitch;
                 roll += deltaTime * rotation_speed * deltaRoll;
-                // std::cout<<"After roll: "<<roll<<"\n\n";
-                // roll = std::clamp(roll, -1.5f, 1.5f);
-                // std::cout<<"Clamp roll: "<<roll<<"\n";
                 curr_camera->transform->rotation = eulerToQua(curr_camera->euler);
-
-                // Use Quaternion
-                // deltaYaw = deltaTime * rotation_speed * deltaYaw;
-                // deltaPitch = deltaTime * rotation_speed * deltaPitch;
-                //  // deltaYaw = myClamp(deltaYaw, -1.5-yaw, 1.5-yaw);
-                // // deltaPitch = myClamp(deltaPitch, -1.5-pitch, 1.5-pitch);
-                // // vec4 qPitch = angleAxis(pitch, vec3(1, 0, 0));
-                // // vec4 qYaw = angleAxis(yaw, vec3(0, 1, 0)); 
-                // vec4 qPitch = angleAxis(deltaPitch, vec3(1, 0, 0));
-                // vec4 qYaw = angleAxis(deltaYaw, vec3(0, 1, 0)); 
-                // vec4& rotation = curr_camera->transform->rotation;
-                // // rotation = quaMul(qPitch, qYaw);
-                // rotation = quaMul(quaMul(qPitch.normalized(),rotation),qYaw.normalized());
             }
             
-            // float yaw = curr_camera->yaw();
-            // // float pitch = curr_camera->pitch();
-            // float cos_yaw = cos(yaw);
-            // float sin_yaw = sin(yaw);
-            // float cos_pitch = cos(pitch);
-            // float sin_pitch = sin(pitch);
-            // vec3 forward(cos_pitch * sin_yaw, -sin_pitch, cos_pitch * cos_yaw);
             vec4 forward4 = rotationMat(curr_camera->transform->rotation) * vec4(0,0,-1,0);
             forward4.normalize();
             vec3 forward(forward4[0],forward4[1],forward4[2]);
@@ -158,17 +133,9 @@ public:
             camera_itr = cameras.begin();
         }
         curr_camera = camera_itr->second;
-        switched = true;
         std::cout<<"Switch to camera: "<<camera_itr->first<<"\n";
     }
 
-    bool isSwitched(){
-        return switched;
-    }
-
-    void resetSwitched(){
-        switched = false;
-    }
 
     bool isMovable(){
         return curr_camera->movable;
@@ -186,6 +153,5 @@ private:
     std::shared_ptr<Camera> debug_camera;
     std::unordered_map<std::string, std::shared_ptr<Camera> > cameras;
     std::unordered_map<std::string, std::shared_ptr<Camera> >::iterator camera_itr;
-    bool switched = true;
     
 };

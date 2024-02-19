@@ -1,25 +1,13 @@
 //
 //  viewer.h
-//  VulkanTesting
 //
 //  Created by qiru hu on 1/29/24.
 //
 
 #pragma once
-
-//
-//  main.cpp
-//  VulkanTesting
-//
-//  Created by qiru hu on 1/16/24.
-//
-#define STB_IMAGE_IMPLEMENTATION
+// #define STB_IMAGE_IMPLEMENTATION
 // #include "stb_image.h"
 
-// #define GLM_FORCE_RADIANS
-// #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-// #include <glm/glm.hpp>
-// #include <glm/gtc/matrix_transform.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -121,6 +109,7 @@ private:
     bool does_measure = false;
     int frame_count = 0;
     float total_time = 0.0f;
+    int vertices_count = 0;
 
     UniformBufferObject ubo = {};
     
@@ -315,9 +304,9 @@ private:
                                 0,/*offset into the index buffer*/
                                 0,//offset to add to the indices
                                 0);//offset for instancing
+            } else {
+                vkCmdDraw(commandBuffer, static_cast<uint32_t>(info->mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
             }
-            vkCmdDraw(commandBuffer, static_cast<uint32_t>(info->mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
-        
         }
 
         

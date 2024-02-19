@@ -56,9 +56,9 @@ public:
         data[3] = w;
     }
 
-    qua operator*(float s) {
-        return qua(data*s);
-    }
+    // qua operator*(float s) {
+    //     return qua(data*s);
+    // }
 
     qua operator+(const qua q) {
         qua r;
@@ -77,6 +77,14 @@ public:
         assert(idx < 4);
         return data[idx];
     }
+
+    qua operator-() const {
+        qua q;
+        for(size_t i=0; i<4; i++){
+            q[i] = - data[i];
+        }
+		return q;
+	}
 
     vec4 toVec(){
         return data;

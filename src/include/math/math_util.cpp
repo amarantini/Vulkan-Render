@@ -1,6 +1,7 @@
 
 #include <_types/_uint32_t.h>
 #include <algorithm>
+#include <cfloat>
 #include "math_util.h"
 
 /* ----------------- Vec -----------------*/
@@ -50,6 +51,8 @@ float degToRad(float degree) {
 vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/){
     return start + (end - start) * t;
 }
+
+
 
 /* ---------------- Transform ---------------- */
 
@@ -119,16 +122,6 @@ mat4 scaleMat(vec3 s) {
 
 // Prepare a rotation matrix (from a quaternion)
 mat4 rotationMat(qua r) {
-    // float x = rotation[0];
-    // float y = rotation[1];
-    // float z = rotation[2];
-    // float w = rotation[3];
-    // return mat4::transpose(mat4(
-    //     2*(x*x+y*y)-1, 2*(y*z-x*w), 2*(y*w+x*z), 0.0f,
-    //     2*(y*z+x*w), 2*(x*x+z*z)-1, 2*(z*w-x*y), 0.0f,
-    //     2*(y*w-x*z), 2*(z*w+x*y), 2*(x*x-w*w)-1, 0.0f,
-    //     0.0f, 0.0f, 0.0f, 1.0f
-    // ));
 
     mat4 m = mat4::I;
     float qxx(r[0] * r[0]);
@@ -177,6 +170,19 @@ qua eulerToQua(vec3 euler){ //pitch, yaw, roll
 
 qua quaLerp(const qua qStart, const qua qEnd, float t) {
     return qStart * (1.0f - t) + qEnd * t;
+}
+
+// Slerp for quaternions
+// Referenced Scotter3D
+qua slerp(qua qStart, qua qEnd, float t /* a fraction of 1*/){
+    float cosHalfTheta = dot(qStart.toVec(), qEnd.toVec());
+    qua q = cosHalfTheta < 0 ? -qStart : qStart;
+    if (std::abs(cosHalfTheta) >= 1.0f - FLT_EPSILON) {
+		return (1.0f - t) * q + t * qEnd;
+	}
+
+	float halfTheta = std::acos(std::abs(cosHalfTheta));
+	return (std::sin((1.0f - t) * halfTheta) * q + std::sin(t * halfTheta) * qEnd) * (1.0f / std::sin(halfTheta));
 }
 
 /** Return a quaternion given
