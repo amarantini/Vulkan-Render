@@ -33,8 +33,8 @@ struct Pbr {
 
 // Lambertian material
 struct Lambertian {
-    std::optional<vec3> base_color;
-    std::optional<Texture> base_color_texture;
+    std::optional<vec3> albedo;
+    std::optional<Texture> albedo_texture;
 };
 
 // Mirror material: a perfect mirror BRDF
@@ -45,6 +45,9 @@ struct Mirror {
 struct Environment {
 };
 
+struct Simple {
+};
+
 // Simple material: uses a hemisphere light to shade a model based on its normals and vertex colors
 struct Material {
     enum Type {PBR, LAMBERTIAN, MIRROR, ENVIRONMENT, SIMPLE};
@@ -52,12 +55,20 @@ struct Material {
     std::string name;
     std::optional<Texture> normal_map;
     std::optional<Texture> displacement_map;
-    std::variant<Pbr, Lambertian,Mirror,Environment> material;
+    std::variant<Pbr, Lambertian,Mirror,Environment,Simple> material;
     Type type = Type::SIMPLE;
 
     Material() = default;
 
     Material(decltype(material) material_, Type type_) : material(std::move(material_)), type(type_) { }
+
+    Pbr pbr(){
+        return std::get<Pbr>(material);
+    }
+
+    Lambertian lambertian(){
+        return std::get<Lambertian>(material);
+    }
 };
 
 

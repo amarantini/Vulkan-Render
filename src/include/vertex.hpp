@@ -64,10 +64,13 @@ struct Vertex {
 struct UniformBufferObject {
     alignas(16) mat4 view;
     alignas(16) mat4 proj;
+    alignas(16) mat4 light;
+    alignas(16) vec3 eye; // camera position
 };
 
 struct ModelPushConstant {
     alignas(16) mat4 model;
+    alignas(16) mat4 invModel;
 };
 
 

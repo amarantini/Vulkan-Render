@@ -39,14 +39,28 @@ static bool ENABLE_INDEX_BUFFER = true;
 const int MAX_FRAME_COUNT = 800;
 
 // Shader paths
-const std::string SIMPLE_VSHADER = "./src/shaders/simple.vert.spv";
-const std::string SIMPLE_FSHADER = "./src/shaders/simple.frag.spv";
+const std::string SHADER_PATH = "./src/shaders/bin/";
 
-const std::string ENV_VSHADER = "./src/shaders/skybox.vert.spv";
-const std::string ENV_FSHADER = "./src/shaders/skybox.frag.spv";
+const std::string SIMPLE_VSHADER = SHADER_PATH+"simple.vert.spv";
+const std::string SIMPLE_FSHADER = SHADER_PATH+"simple.frag.spv";
 
-const std::string MIRROR_VSHADER = "./src/shaders/mirror.vert.spv";
-const std::string MIRROR_FSHADER = "./src/shaders/mirror.frag.spv";
+const std::string ENV_VSHADER = SHADER_PATH+"env.vert.spv";
+const std::string ENV_FSHADER = SHADER_PATH+"env.frag.spv";
 
-const std::string LAMBER_VSHADER = "./src/shaders/lamber.vert.spv";
-const std::string LAMBER_FSHADER = "./src/shaders/lamber.frag.spv";
+const std::string MIRROR_VSHADER = SHADER_PATH+"mirror.vert.spv";
+const std::string MIRROR_FSHADER = SHADER_PATH+"mirror.frag.spv";
+
+const std::string LAMBER_VSHADER = SHADER_PATH+"lamber.vert.spv";
+const std::string LAMBER_FSHADER = SHADER_PATH+"lamber.frag.spv";
+
+const std::string PBR_VSHADER = SHADER_PATH+"pbr.vert.spv";
+const std::string PBR_FSHADER = SHADER_PATH+"pbr.frag.spv";
+
+const int MAX_DESCRIPTOR_COUNT = 6; //maximum number of texture sampler descriptor
+
+// Cube arguments
+const std::string LAMBERTIAN = "--lambertian";
+const std::string GGX = "--ggx";
+const std::string LUT = "--lut";
+
+const int ENVIRONMENT_MIP_LEVEL = 5;

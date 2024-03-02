@@ -3,11 +3,14 @@
 layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
+    mat4 light; //light's world to local transformation
+    vec4 eye; //world space eye position
 } ubo;
 
 layout(push_constant) uniform pushConstant
 {
 	mat4 model;
+    mat4 invModel;
 } pc;
 
 layout(location = 0) in vec3 inPosition;
@@ -16,15 +19,19 @@ layout(location = 2) in vec3 inColor;
 layout(location = 3) in vec4 inTangent;
 layout(location = 4) in vec2 inTexCoord;
 
-layout(location = 0) out vec3 fragColor;
-layout(location = 1) out vec3 normal;
-layout(location = 2) out vec4 tangent;
-layout(location = 3) out vec2 texCoord;
+layout(location = 0) out struct data {
+    mat3 light;
+    vec3 normal; // normal in world space
+    vec4 tangent; // in world space
+    vec2 texCoord;
+} outData;
 
 void main() {
     gl_Position = ubo.proj * ubo.view * pc.model * vec4(inPosition, 1.0);
-    fragColor = inColor;
-    normal = inNormal;
-    tangent = inTangent;
-    texCoord = inTexCoord;
+
+    mat3 normalMatrix = mat3(pc.invModel);
+    outData.light = mat3(ubo.light);
+    outData.normal = normalize(normalMatrix * inNormal);
+    outData.tangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
+    outData.texCoord = inTexCoord;
 }

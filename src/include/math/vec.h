@@ -115,6 +115,14 @@ public:
         data[3] = v[2];
     }
 
+    vec(vec<T,2> v, T _z, T _w){
+        assert(size==4);
+        data[0] = v[0];
+        data[1] = v[1];
+        data[2] = _z;
+        data[3] = _w;
+    }
+
     vec(std::vector<T> vec){
         assert(size==vec.size());
         for(size_t i=0; i<size; i++){
@@ -267,6 +275,11 @@ public:
         return os << v.as_string();
     }
 
+    vec<T,3> xyz() {
+        assert(size >= 3);
+        return vec<T,3>(data[0],data[1],data[2]);
+    }
+
 };
 
 template<typename T, uint32_t size>
@@ -317,6 +330,7 @@ inline vec<T,size> operator/(float s, vec<T,size> v) {
 typedef vec<float,2> vec2;
 typedef vec<float,3> vec3;
 typedef vec<float,4> vec4;
+typedef vec<uint8_t,4> u8vec4;
 
 inline bool operator==(vec3 l, vec3 r) {
     for(size_t i=0; i<3; i++){

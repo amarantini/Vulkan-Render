@@ -21,7 +21,7 @@ const maek = init_maek();
 //======================================================================
 
 //set default targets to build (can be overridden by command line options):
-maek.TARGETS = ["bin/viewer" + (maek.OS === "windows" ? ".exe" : "")];
+maek.TARGETS = ["bin/viewer" + (maek.OS === "windows" ? ".exe" : ""), "bin/cube" + (maek.OS === "windows" ? ".exe" : "")];
 
 // const VULKAN_SDK = process.env.VULKAN_SDK;
 const USER = process.env.USER;
@@ -39,7 +39,7 @@ const srcIncludeWin = ["/Isrc/include",
 "/Isrc/include/scene",  
 "/Isrc/include/math",
 "/Isrc/include/utils",
-"/src/include/vk",
+"/Isrc/include/vk",
 "/I/usr/local/include"];
 
 //set compile flags (these can also be overridden per-task using the "options" parameter):
@@ -105,19 +105,21 @@ if (maek.OS === "windows") {
 
 	maek.options.CPPFlags = [
 		'-O2',
-		`-I${VULKAN_SDK}/include`,
+		`-I${VULKAN_SDK}/macOS/include`,
 		`-I/Users/${USER}/Vulkan`,
 		//include directories
 		...srcInclude
 	];
 
 	maek.options.LINKLibs = [
-		`-L${VULKAN_SDK}/lib`,
+		`-L${VULKAN_SDK}/macOS/lib`,
 		`-lvulkan`,
 		'-framework', 'AppKit',
 		'-framework', 'QuartzCore',
 		"-lglfw",
 	];
+
+	maek.options.GLSLC = [`${VULKAN_SDK}/macOS/bin/glslc`]
 
 	// maek.options.CPPFlags.push(
 	// 	// "-O2", //optimize
@@ -134,6 +136,8 @@ if (maek.OS === "windows") {
 	// 	`-L${VULKAN_SDK}/macOS/lib`
 	// );
 }
+
+
 
 //call rules on the maek object to specify tasks.
 // rules generally look like:
@@ -170,6 +174,12 @@ const viewer_objects = [
 	maek.CPP('./src/main.cpp'),
 ]
 
+const cube_objects = [
+	...utils_objects,
+	...math_objects,
+	maek.CPP('./src/cube.cpp'),
+]
+
 
 //'[exeFile =] LINK(objFiles, exeFileBase, [, options])' links an array of objects into an executable:
 // objFiles: array of objects to link
@@ -177,8 +187,37 @@ const viewer_objects = [
 //returns exeFile: exeFileBase + a platform-dependant suffix (e.g., '.exe' on windows)
 const viewer_exe = maek.LINK(viewer_objects, 
 							'bin/viewer');
+const cube_exe = maek.LINK(cube_objects, 
+								'bin/cube');
 // const test_exe = maek.LINK([test_obj, Player_obj, Level_obj], 'test/game-test');
 
+// Shader file compilation
+const simple_frag_spv = maek.GLSLC("./src/shaders/simple.shader.frag", "./src/shaders/bin/simple.frag");
+const simple_vert_spv = maek.GLSLC("./src/shaders/simple.shader.vert", "./src/shaders/bin/simple.vert");
+
+const env_frag_spv = maek.GLSLC("./src/shaders/env.shader.frag", "./src/shaders/bin/env.frag");
+const env_vert_spv = maek.GLSLC("./src/shaders/env.shader.vert", "./src/shaders/bin/env.vert");
+
+const lamber_frag_spv = maek.GLSLC("./src/shaders/lamber.shader.frag", "./src/shaders/bin/lamber.frag");
+const lamber_vert_spv = maek.GLSLC("./src/shaders/lamber.shader.vert", "./src/shaders/bin/lamber.vert");
+
+const mirror_frag_spv = maek.GLSLC("./src/shaders/mirror.shader.frag", "./src/shaders/bin/mirror.frag");
+const mirror_vert_spv = maek.GLSLC("./src/shaders/mirror.shader.vert", "./src/shaders/bin/mirror.vert");
+
+const pbr_frag_spv = maek.GLSLC("./src/shaders/pbr.shader.frag", "./src/shaders/bin/pbr.frag");
+const pbr_vert_spv = maek.GLSLC("./src/shaders/pbr.shader.vert", "./src/shaders/bin/pbr.vert");
+
+
+maek.TARGETS.push("./src/shaders/bin/simple.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/simple.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/env.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/env.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/lamber.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/lamber.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/mirror.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/mirror.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/pbr.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/pbr.vert" + maek.options.spirvSuffix,);
 
 
 
@@ -250,6 +289,9 @@ function init_maek() {
 		CPPFlags: [], //extra flags for c++ compiler
 		LINK: [], //the linker and any flags to start with (set below, per-OS)
 		LINKLibs: [], //extra -L and -l flags for linker
+		GLSLC: [],
+		GLSLCFlags: [],
+		spirvSuffix: '.spv'
 	}
 
 	if (maek.OS === 'windows') {
@@ -437,6 +479,54 @@ function init_maek() {
 		maek.tasks[exeFile] = task;
 
 		return exeFile;
+	};
+
+	//maek.GLSLC is a rule to run google's "glslc" compiler:
+	// glslFile is the source file name (if it has a generic extension, make sure to add '-fshader-stage=...' option)
+	// spirvFileBase (optional) is the output file (including any subdirectories, but not the extension)
+	maek.GLSLC = (glslFile, spirvFileBase, localOptions = {}) => {
+		
+		const path = require('path').posix; //NOTE: expect posix-style paths even on windows
+		const fsPromises = require('fs').promises;
+
+		//combine options:
+		const options = combineOptions(localOptions);
+
+		//if objFileBase isn't given, compute by adding spirvSuffix to glslFile:
+		if (typeof spirvFileBase === 'undefined') {
+			spirvFileBase = path.relative('', options.spirvPrefix + glslFile, '');
+		}
+
+		//object file gets os-dependent suffix:
+		const spirvFile = spirvFileBase + options.spirvSuffix;
+
+		const glslc = [...options.GLSLC, ...options.GLSLCFlags];
+		const command = [...glslc, '-o', spirvFile, glslFile];
+
+		//The actual build task:
+		const task = async () => {
+			//make object file:
+			await fsPromises.mkdir(path.dirname(spirvFile), { recursive: true });
+			await run(command, `${task.label}: compile`,
+				async () => {
+					return {
+						read:[glslFile],
+						written:[spirvFile]
+					};
+				}
+			);
+		};
+
+		task.depends = [glslFile, ...options.depends];
+
+		task.label = `GLSLC ${spirvFile}`;
+
+		if (spirvFile in maek.tasks) {
+			throw new Error(`Task ${task.label} purports to create ${spirvFile}, but ${maek.tasks[spirvFile].label} already creates that file.`);
+		}
+		maek.tasks[spirvFile] = task;
+
+		return spirvFile;
 	};
 
 

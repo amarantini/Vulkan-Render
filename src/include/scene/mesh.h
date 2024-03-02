@@ -32,8 +32,8 @@ struct Mesh {
     std::shared_ptr<Material> material;
     bool simple; //if "simple" material, then only load position, normal and color
 
-    Mesh(std::string _name, std::string _topology, int _count, LoadInfo pos_info_, LoadInfo normal_info_, LoadInfo color_info_, LoadInfo tex_info_, LoadInfo tangent_info_)
-        : name(_name), topology(_topology), count(_count), pos_info(pos_info_), normal_info(normal_info_), color_info(color_info_), tex_info(tex_info_), tangent_info(tangent_info_) {}
+    Mesh(std::string _name, std::string _topology, int _count, LoadInfo pos_info_, LoadInfo normal_info_, LoadInfo color_info_, LoadInfo tex_info_, LoadInfo tangent_info_, bool simple_)
+        : name(_name), topology(_topology), count(_count), pos_info(pos_info_), normal_info(normal_info_), color_info(color_info_), tex_info(tex_info_), tangent_info(tangent_info_), simple(simple_) {}
 
     void loadMesh(){
         if(simple){
@@ -43,6 +43,9 @@ struct Mesh {
         }
         if(ENABLE_INDEX_BUFFER)
             calculateIndices();
+        for(int i=0; i<3; i++){
+            std::cout<<"normal: "<<vertices[i].normal<<", tangent: "<<vertices[i].tangent<<", texCoord: "<<vertices[i].texCoord<<"\n";
+        }
     }
 
     void loadMeshSimple(){
@@ -83,6 +86,9 @@ struct Mesh {
             v.color[2] = static_cast<float>(color) / 255.0f;
             infile.read((char*)&color, sizeof(uint8_t));
             // v.color[3] = static_cast<float>(color);
+
+            v.tangent = vec4(1,0,0,1);
+            v.texCoord = vec2(0);
         }
 
         infile.close();
@@ -138,7 +144,7 @@ struct Mesh {
             infile.read((char*)&color, sizeof(uint8_t));
             v.color[2] = static_cast<float>(color) / 255.0f;
             infile.read((char*)&color, sizeof(uint8_t));
-            // v.color[3] = static_cast<float>(color);
+            // v.color[3] = static_cast<float>(color);        
         }
 
         infile.close();
@@ -169,12 +175,10 @@ struct Mesh {
             }
         }
         
-        // std::vector<Vertex> new_vertices(vertex_to_idx.size());
         vertices.resize(vertex_to_idx.size());
         for(auto& [vertex, index]: vertex_to_idx){
             vertices[index] = vertex;
         }
-        // vertices = new_vertices;
 
     }
 };

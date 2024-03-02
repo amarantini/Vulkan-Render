@@ -24,6 +24,7 @@ infile = None
 s72file = None
 collection_name = None
 frames = None
+simple = False
 
 i = 0
 while i < len(args):
@@ -139,6 +140,11 @@ def write_mesh(obj):
 
 	#compute normals (respecting face smoothing):
 	mesh.calc_normals_split()
+	mesh.calc_tangents()
+
+	if not simple:
+		# Get basic UV info
+		uvmap = mesh.uv_layers.active
 
 	colors = None
 	if len(mesh.color_attributes) == 0:
@@ -163,6 +169,14 @@ def write_mesh(obj):
 
 			attribs.append(struct.pack('fff', vertex.co.x, vertex.co.y, vertex.co.z))
 			attribs.append(struct.pack('fff', loop.normal.x, loop.normal.y, loop.normal.z))
+			if not simple:
+				attribs.append(struct.pack('ffff', loop.tangent.x, loop.tangent.y, loop.tangent.z, 1))
+				uv = uvmap.data[tri.loops[i]].uv	
+				attribs.append(struct.pack('ff', uv.x, uv.y ))
+				# print(loop.normal)
+				# print(loop.tangent)
+				# print(uv)
+
 			def c(v):
 				s = int(v * 255)
 				if s < 0: return 0
@@ -183,9 +197,11 @@ def write_mesh(obj):
 	out.append(f'\t"topology":"TRIANGLE_LIST",\n')
 	out.append(f'\t"count":{count},\n')
 	out.append(f'\t"attributes":{{\n')
-	out.append(f'\t\t"POSITION":{{ "src":{json.dumps(rel_b72file)}, "offset":0, "stride":28, "format":"R32G32B32_SFLOAT" }},\n')
-	out.append(f'\t\t"NORMAL":{{ "src":{json.dumps(rel_b72file)}, "offset":12, "stride":28, "format":"R32G32B32_SFLOAT" }},\n')
-	out.append(f'\t\t"COLOR":{{ "src":{json.dumps(rel_b72file)}, "offset":24, "stride":28, "format":"R8G8B8A8_UNORM" }}\n')
+	out.append(f'\t\t"POSITION":{{ "src":{json.dumps(rel_b72file)}, "offset":0, "stride":52, "format":"R32G32B32_SFLOAT" }},\n')
+	out.append(f'\t\t"NORMAL":{{ "src":{json.dumps(rel_b72file)}, "offset":12, "stride":52, "format":"R32G32B32_SFLOAT" }},\n')
+	out.append(f'\t\t"TANGENT":{{ "src":{json.dumps(rel_b72file)}, "offset":24, "stride":52, "format":"R32G32B32A32_SFLOAT" }},\n')
+	out.append(f'\t\t"TEXCOORD":{{ "src":{json.dumps(rel_b72file)}, "offset":40, "stride":52, "format":"R32G32_SFLOAT" }},\n')
+	out.append(f'\t\t"COLOR":{{ "src":{json.dumps(rel_b72file)}, "offset":48, "stride":52, "format":"R8G8B8A8_UNORM" }}\n')
 	out.append(f'\t}}\n')
 	out.append('},\n')
 

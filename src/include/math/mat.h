@@ -54,7 +54,7 @@ public:
     static const MAT_TYPE Zero;
 
     static mat<T,col_size,row_size> transpose(const MAT_TYPE& m);
-    // static mat<T,col_size,row_size> inverse(const MAT_TYPE& m);
+    //static mat<T,col_size,row_size> inverse(const MAT_TYPE& m);
 
     mat() {
         for(size_t r=0; r<row_size; r++){
@@ -184,6 +184,12 @@ public:
     MAT_TYPE operator-(const MAT_TYPE& m) const {
         mat r = *this;
         r -= m;
+        return r;
+    }
+
+    MAT_TYPE operator*(const float f) const {
+        mat r = *this;
+        r *= f;
         return r;
     }
 

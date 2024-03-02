@@ -104,6 +104,10 @@ std::shared_ptr<JsonValue> JsonParser::parseObj(std::istringstream& in) {
 
     char c = readChar(in);
     assert(c=='{');
+    if(in.peek()=='}'){
+        c = readChar(in);
+        return root;
+    }
     while(true){
         std::string key = parseStr(in);
         std::shared_ptr<JsonValue> val;
