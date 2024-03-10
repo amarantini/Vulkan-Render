@@ -1,6 +1,5 @@
 //
 //  viewer.h
-//  VulkanTesting
 //
 //  Created by qiru hu on 1/29/24.
 //
@@ -15,10 +14,6 @@
 //
 
 
-// #define GLM_FORCE_RADIANS
-// #define GLM_FORCE_DEPTH_ZERO_TO_ONE
-// #include <glm/glm.hpp>
-// #include <glm/gtc/matrix_transform.hpp>
 
 #include "scene/material.h"
 #include <_types/_uint8_t.h>
@@ -124,6 +119,7 @@ private:
     bool does_measure = false;
     int frame_count = 0;
     float total_time = 0.0f;
+    int vertices_count = 0;
 
     UniformBufferObject ubo = {};
     

@@ -179,16 +179,6 @@ mat4 scaleMat(vec3 s) {
 
 // Prepare a rotation matrix (from a quaternion)
 mat4 rotationMat(qua r) {
-    // float x = rotation[0];
-    // float y = rotation[1];
-    // float z = rotation[2];
-    // float w = rotation[3];
-    // return mat4::transpose(mat4(
-    //     2*(x*x+y*y)-1, 2*(y*z-x*w), 2*(y*w+x*z), 0.0f,
-    //     2*(y*z+x*w), 2*(x*x+z*z)-1, 2*(z*w-x*y), 0.0f,
-    //     2*(y*w-x*z), 2*(z*w+x*y), 2*(x*x-w*w)-1, 0.0f,
-    //     0.0f, 0.0f, 0.0f, 1.0f
-    // ));
 
     mat4 m = mat4::I;
     float qxx(r[0] * r[0]);

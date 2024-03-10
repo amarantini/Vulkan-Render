@@ -1697,6 +1697,7 @@ void ViewerApplication::eventLoop() {
     auto current_time_measure = std::chrono::high_resolution_clock::now();
     float currt_frame_time = 0;
     float last_ts;
+    float last_ts;
     while(!event_controller->isFinished()) {
         Event& e = event_controller->nextEvent();
         float time = e.ts / (float) 1e6;
@@ -1706,6 +1707,7 @@ void ViewerApplication::eventLoop() {
             drawFrame();
         } else if (e.type == EventType::PLAY) {
             animation_controller->setPlaybackTimeRate(time, e.rate);
+            animation_controller->setPlaybackTimeRate(time, e.rate);
         } else if (e.type == EventType::SAVE) {
             screenshotSwapChain(IMG_STORAGE_PATH+e.filename);
         } else if (e.type == EventType::MARK) {
@@ -1713,15 +1715,19 @@ void ViewerApplication::eventLoop() {
         }
         
         if(does_measure && last_ts != e.ts){
+        if(does_measure && last_ts != e.ts){
             auto new_time_measure = std::chrono::high_resolution_clock::now();
             float delta_time = std::chrono::duration<float, std::chrono::seconds::period>(new_time_measure - current_time_measure).count();
             std::cout<<"MEASURE frame "<<delta_time<<"\n";
             current_time_measure = new_time_measure;
             total_time += delta_time;
             last_ts=e.ts;
+            last_ts=e.ts;
         }
         
     }
+    if(does_measure)
+        std::cout<<"Total time: "<<total_time<<"\n";
     if(does_measure)
         std::cout<<"Total time: "<<total_time<<"\n";
 }
@@ -1751,31 +1757,7 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
     VkImage srcImage = swapChainImages[imageIndex];
 
     // Create the linear tiled destination image to copy to and to read the memory from
-    VkImageCreateInfo imageCreateInfo = {};
-    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-    // Note that vkCmdBlitImage (if supported) will also do format conversions if the swapchain color format would differ
-    imageCreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-    imageCreateInfo.extent.width = width;
-    imageCreateInfo.extent.height = height;
-    imageCreateInfo.extent.depth = 1;
-    imageCreateInfo.arrayLayers = 1;
-    imageCreateInfo.mipLevels = 1;
-    imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
-    imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    // Create the image
     VkImage dstImage;
-    if(vkCreateImage(device, &imageCreateInfo, nullptr, &dstImage) != VK_SUCCESS){
-        throw std::runtime_error("failed to create image for screenshot!");
-    }
-    // Create memory to back up the image
-    VkMemoryRequirements memRequirements;
-    VkMemoryAllocateInfo memAllocInfo = {};
-    memAllocInfo.sType =VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    memAllocInfo.allocationSize = memRequirements.size;
-
     VkDeviceMemory dstImageMemory;
     vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
     memAllocInfo.allocationSize = memRequirements.size;
@@ -1871,9 +1853,6 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
                 VK_ACCESS_MEMORY_READ_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
 			    VK_PIPELINE_STAGE_TRANSFER_BIT);
-    
-
-    // vulkanDevice->flushCommandBuffer(copyCmd, queue);
 
     // Get layout of the image (including row pitch)
     VkImageSubresource subResource { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
