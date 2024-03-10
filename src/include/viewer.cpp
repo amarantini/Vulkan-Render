@@ -1697,7 +1697,6 @@ void ViewerApplication::eventLoop() {
     auto current_time_measure = std::chrono::high_resolution_clock::now();
     float currt_frame_time = 0;
     float last_ts;
-    float last_ts;
     while(!event_controller->isFinished()) {
         Event& e = event_controller->nextEvent();
         float time = e.ts / (float) 1e6;
@@ -1714,7 +1713,6 @@ void ViewerApplication::eventLoop() {
             std::cout<<"MARK "<<e.description_words<<"\n";
         }
         
-        if(does_measure && last_ts != e.ts){
         if(does_measure && last_ts != e.ts){
             auto new_time_measure = std::chrono::high_resolution_clock::now();
             float delta_time = std::chrono::duration<float, std::chrono::seconds::period>(new_time_measure - current_time_measure).count();
@@ -1759,14 +1757,16 @@ void ViewerApplication::screenshotSwapChain(const std::string& filename) {
     // Create the linear tiled destination image to copy to and to read the memory from
     VkImage dstImage;
     VkDeviceMemory dstImageMemory;
-    vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
-    memAllocInfo.allocationSize = memRequirements.size;
-    // Memory must be host visible to copy from
-    memAllocInfo.memoryTypeIndex = vkHelper.findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    if(vkAllocateMemory(device, &memAllocInfo, nullptr, &dstImageMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate memory for screenshot!");
-    }
-    vkBindImageMemory(device, dstImage, dstImageMemory, 0);
+    // vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
+    // memAllocInfo.allocationSize = memRequirements.size;
+    // // Memory must be host visible to copy from
+    // memAllocInfo.memoryTypeIndex = vkHelper.findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    // if(vkAllocateMemory(device, &memAllocInfo, nullptr, &dstImageMemory) != VK_SUCCESS) {
+    //     throw std::runtime_error("failed to allocate memory for screenshot!");
+    // }
+    // vkBindImageMemory(device, dstImage, dstImageMemory, 0);
+    vkHelper.createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, dstImage, dstImageMemory);
 
     // Do the actual blit from the swapchain image to our host visible destination image
     

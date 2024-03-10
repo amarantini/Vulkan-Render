@@ -841,8 +841,6 @@ private:
 
     } model_list;
 
-    int vertices_count = 0;
-
     
 
 
