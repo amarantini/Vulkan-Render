@@ -51,31 +51,33 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 
 void main() {
 	// Normal mapping
-	vec3 V = inData.V;
-	vec3 N = computeNormal();
-	vec3 R = reflect(-V, N); 
+	vec3 V = normalize(inData.V);
+	vec3 N = normalize(computeNormal());
+	vec3 R = normalize(reflect(-V, N)); 
 
 	// compute radiance from rgbe
-	vec3 rad = toRadiance(texture(irradianceMap, normalize(inData.light * N)));
+	vec3 irrad = toRadiance(texture(irradianceMap, normalize(inData.light * N)));
+
+	float NdotV = min(max(dot(N, V), 0.0),1.0);
 	
 	float metalness = texture(metalnessMap, inData.texCoord).r;
 	float roughness = texture(roughnessMap, inData.texCoord).r;
 	vec3 albedo = texture(albedoMap, inData.texCoord).rgb;
-	vec2 brdf = texture(brdfLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
-	vec3 prefilteredColor = prefilteredReflection(R, roughness);
+	vec2 brdf = texture(brdfLUT, vec2(NdotV,roughness)).rg;
+	vec3 prefilteredColor = prefilteredReflection(normalize(inData.light * R), roughness);
 
 	vec3 ALBEDO = pow(texture(albedoMap, inData.texCoord).rgb, vec3(2.2));
 	vec3 F0 = vec3(0.04); 
 	F0 = mix(F0, ALBEDO, metalness);
 
-	vec3 F = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+	vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
 
 	vec3 kS = F;
 	vec3 kD = 1.0 - kS;
 	kD *= 1.0 - metalness;
 
 	// Diffuse
-	vec3 diffuse = rad * albedo;
+	vec3 diffuse = irrad * albedo;
 
 	// Specular
 	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);

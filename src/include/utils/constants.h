@@ -35,7 +35,7 @@ const int FRAME_RATE = 30;
 const float FRAME_TIME = (1.0f / 30.0f); // in seconds
 
 // Performance testing
-static bool ENABLE_INDEX_BUFFER = true;
+// static bool ENABLE_INDEX_BUFFER = true;
 const int MAX_FRAME_COUNT = 800;
 
 // Shader paths

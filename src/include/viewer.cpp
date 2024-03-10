@@ -5,12 +5,12 @@
 #include "vk/vk_helper.h"
 #include "file.hpp"
 
-#include <_types/_uint32_t.h>
 #include <cfloat>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "utils/stb_image.h"
@@ -1212,9 +1212,11 @@ void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;
     ubo.view = camera_controller->getView();
     ubo.light = environmentLightingInfo.transform->worldToLocal(); // transform from world space to environment space
+    // std::cout<<"ubo.light: "<<ubo.light;
     
     vec4 eyePos = camera_controller->getEyePos();
     ubo.eye = vec3(eyePos[0], eyePos[1], eyePos[2]);
+    // std::cout<<"ubo.eye: "<<ubo.eye;
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
 
@@ -1398,12 +1400,13 @@ ViewerApplication::TextureInfo ViewerApplication::VkTexture::loadFromFile(const 
     if (!info.pixels) {
         throw std::runtime_error("failed to load texture image at: "+std::string(texture_file_path));
     }
+    std::cout<<texture_file_path<<" - width, height: "<<info.texWidth<<", "<<info.texHeight<<"\n";
 
     return info;
 }
 
 void ViewerApplication::VkTexture::createTextureImage(TextureInfo info, VkFormat format) {
-    VkDeviceSize imageSize = info.texWidth * info.texHeight * 4;
+    VkDeviceSize imageSize = info.texWidth * info.texHeight * info.texChannels;
     
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1438,12 +1441,39 @@ void ViewerApplication::VkTexture::createTextureImage(TextureInfo info, VkFormat
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
+ViewerApplication::TextureInfo ViewerApplication::VkTexture2D::loadLUTFromBinaryFile(const std::string texture_file_path) {
+    int file_size = 512*512;
+    std::ifstream zIn(texture_file_path, std::ios::in | std::ios::binary);
+    float *chBuffer = new float[file_size * 2];
+    zIn.read(reinterpret_cast<char*>(chBuffer), sizeof(float)*file_size *2);
+    zIn.close();
+    std::cout<<chBuffer[0]<<","<<chBuffer[1]<<"\n";
+    
+    TextureInfo info;
+    info.texHeight = 512;
+    info.texWidth = 512;
+    info.texChannels = 2*sizeof(float);
+    info.pixels = reinterpret_cast<unsigned char*>(chBuffer);
+    return info;
+}
+
 void ViewerApplication::VkTexture2D::load(const std::string texture_file_path, VkFormat format){
-    TextureInfo info = loadFromFile(texture_file_path.c_str(), STBI_rgb); //load 3 channels only
+    TextureInfo info;
+    if (texture_file_path.find("txt") != std::string::npos) {
+        // lutBrdf in binary file ends with txt
+        info = loadLUTFromBinaryFile(texture_file_path);
+        
+    } else if (texture_file_path.find("png") != std::string::npos){
+        stbi_set_flip_vertically_on_load(true);
+        info = loadFromFile(texture_file_path.c_str(), STBI_rgb_alpha); //load 4 channels
+    } else {
+        throw std::runtime_error("texture file format not supported: "+texture_file_path);
+    }
+    
     
     createTextureImage(info,format);
     createTextureImageView(format);
-    createTextureSampler();
+    createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
     updateDescriptorImageInfo();
 }
 
@@ -1473,22 +1503,25 @@ void ViewerApplication::VkTextureCube::convertToRadianceValue(TextureInfo& info)
     std::cout<<static_cast<int>(buffer[3])<<"\n";
 }
 
-void ViewerApplication::VkTextureCube::load(std::string texture_file_path, VkFormat format, std::string type){
+void ViewerApplication::VkTextureCube::load(std::string texture_file_path, VkFormat format, std::string type, bool isRgbe){
+    stbi_set_flip_vertically_on_load(false);
     if (type == "") {
         // load original environment map
-        std::cout<<"Load original environment map\n";
+        
         std::vector<TextureInfo> infos = {loadFromFile(texture_file_path.c_str(), STBI_rgb_alpha)}; 
+        std::cout<<"Load original environment map "<<texture_file_path<<"\n";
         createCubeTextureImage(infos, format);
         createCubeTextureImageView(format);
-        createTextureSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER);
+        createTextureSampler(isRgbe, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1);
     } else if (type == "lambertian"){
-        std::cout<<"Load prefiltered environment map for lambertian diffuse\n";
+        
         // load prefiltered environment map for lambertian diffuse
         std::string common_file_path = texture_file_path.substr(0, texture_file_path.find_last_of("."));
-        std::vector<TextureInfo> infos = {loadFromFile((common_file_path+".lambertian.png").c_str(), STBI_rgb_alpha)}; 
+        std::vector<TextureInfo> infos = {loadFromFile((common_file_path+".lambertian.png").c_str(), STBI_rgb_alpha)};
+        std::cout<<"Load prefiltered environment map for lambertian diffuse "<<(common_file_path+".lambertian.png")<<"\n"; 
         createCubeTextureImage(infos, format);
         createCubeTextureImageView(format);
-        createTextureSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER);
+        createTextureSampler(isRgbe, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1);
     } else if (type == "pbr") {
         // load prefiltered environment maps for PBR
         std::vector<TextureInfo> infos;
@@ -1496,12 +1529,12 @@ void ViewerApplication::VkTextureCube::load(std::string texture_file_path, VkFor
         for(int i=0; i<ENVIRONMENT_MIP_LEVEL; ++i) {
             std::string mip_file_path = common_file_path+".ggx."+std::to_string(i)+".png";
             infos.push_back(loadFromFile(mip_file_path.c_str(), STBI_rgb_alpha)); 
-            std::cout<<"Mipmap "<<i<<": "<<infos.back().texWidth<<","<<infos.back().texHeight<<"\n";
+            std::cout<<"Mipmap "<<mip_file_path<<": "<<infos.back().texWidth<<","<<infos.back().texHeight<<"\n";
         }
         
         createCubeTextureImage(infos, format);
         createCubeTextureImageView(format, ENVIRONMENT_MIP_LEVEL);
-        createTextureSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, ENVIRONMENT_MIP_LEVEL);
+        createTextureSampler(isRgbe, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, ENVIRONMENT_MIP_LEVEL);
     }
     updateDescriptorImageInfo();
 }
@@ -1513,6 +1546,7 @@ void ViewerApplication::VkTextureCube::createCubeTextureImage(std::vector<Textur
     for(auto& info: infos) {
         imageSize += info.texWidth * info.texHeight * info.texChannels;
     }
+    
     
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1537,8 +1571,9 @@ void ViewerApplication::VkTextureCube::createCubeTextureImage(std::vector<Textur
     std::vector<VkBufferImageCopy> bufferCopyRegions;
     currentOffset = 0;
     // Order of image: front, back, up, down, right, left
-    for (uint32_t face = 0; face < 6; face++) {
-        for(int level=0; level<mipLevels; ++level) {
+    
+    for(int level=0; level<mipLevels; ++level) {
+        for (uint32_t face = 0; face < 6; face++) {
             auto& info = infos[level];
             VkBufferImageCopy bufferCopyRegion = {};
             bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1556,6 +1591,7 @@ void ViewerApplication::VkTextureCube::createCubeTextureImage(std::vector<Textur
             currentOffset += info.texWidth * info.texHeight / 6 * info.texChannels;
         }
     }
+    
     
     vkHelper.createImage(infos[0].texWidth, infos[0].texHeight / 6, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory, 6, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, mipLevels);
     
@@ -1595,16 +1631,16 @@ void ViewerApplication::VkTextureCube::createCubeTextureImage(std::vector<Textur
 
 void ViewerApplication::loadEnvironment() {
     if(environmentLightingInfo.exist) {
-        std::cout<<"Load environment map: "<<environmentLightingInfo.texture.src<<"\n";
-        environmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM);
+        environmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "", true);
         if(!model_info_list.lamber_models.empty() || !model_info_list.pbr_models.empty()) {
-            lambertianEnvironmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "lambertian");
+            lambertianEnvironmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "lambertian", true);
         }
         if(!model_info_list.pbr_models.empty()) {
             std::string src = environmentLightingInfo.texture.src;
-            pbrEnvironmentMap.load(src, VK_FORMAT_R8G8B8A8_UNORM, "pbr");
+            pbrEnvironmentMap.load(src, VK_FORMAT_R8G8B8A8_UNORM, "pbr", true);
             
             std::string lut_file_path = src.substr(0, src.find_last_of("."))+".lut.png";
+            // lut.load(lut_file_path, VK_FORMAT_R16G16_SFLOAT);
             lut.load(lut_file_path, VK_FORMAT_R8G8B8A8_UNORM);
         }
     }

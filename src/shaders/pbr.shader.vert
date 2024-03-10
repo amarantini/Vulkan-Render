@@ -35,5 +35,5 @@ void main() {
     outData.N = normalize(normalMatrix * inNormal);
     outData.tangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
     outData.texCoord = inTexCoord;
-    outData.V = vec3(ubo.eye - (pc.model * vec4(inPosition, 1.0)));
+    outData.V = normalize(vec3(ubo.eye - (pc.model * vec4(inPosition, 1.0))));
 }

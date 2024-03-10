@@ -4,6 +4,7 @@
 #include <string>
 #include <random>
 #include <iostream>
+#include <fstream>
 
 #include "include/math/vec.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -14,11 +15,27 @@
 #include "include/utils/arg_parser.h"
 #include "include/utils/constants.h"
 
+
 enum Face {
 	PositiveX = 0, NegativeX = 1,
 	PositiveY = 2, NegativeY = 3,
 	PositiveZ = 4, NegativeZ = 5,
 };
+
+float RadicalInverse_VdC(uint bits) 
+{
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+
+vec2 Hammersley(uint i, uint N)
+{
+    return vec2(float(i)/float(N), RadicalInverse_VdC(i));
+} 
 
 /* --------------------------- PBR --------------------------- */
 
@@ -39,7 +56,7 @@ vec3 make_sample(){
 }
 
 
-void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out_file_path, uint32_t samples, uint32_t out_size) {
+void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out_file_path, uint32_t out_size, int samples) {
     int texWidth, texHeight, texChannels;
     // load Rgbe Cubemap
     unsigned char* buffer = stbi_load(in_file_path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -100,41 +117,67 @@ void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out
 		else if (f == NegativeY) { sc = vec3( 1.0f, 0.0f, 0.0f); tc = vec3( 0.0f, 0.0f,-1.0f); ma = vec3( 0.0f,-1.0f, 0.0f); }
 		else if (f == PositiveZ) { sc = vec3( 1.0f, 0.0f, 0.0f); tc = vec3( 0.0f,-1.0f, 0.0f); ma = vec3( 0.0f, 0.0f, 1.0f); }
 		else if (f == NegativeZ) { sc = vec3(-1.0f, 0.0f, 0.0f); tc = vec3( 0.0f,-1.0f, 0.0f); ma = vec3( 0.0f, 0.0f,-1.0f); }
-
+        std::cout<<"Sampling face "<<f<<"\n";
         for (uint32_t t = 0; t < out_size; ++t) {
 			for (uint32_t s = 0; s < out_size; ++s) {
                 vec3 N = (ma
 				            + (2.0f * (s + 0.5f) / out_size - 1.0f) * sc
 				            + (2.0f * (t + 0.5f) / out_size - 1.0f) * tc).normalized();
-                // std::cout<<f<<","<<t<<","<<s<<":\n N:"<<N;
 				vec3 temp = (abs(N[2]) < 0.99f ? vec3(0.0f, 0.0f, 1.0f) : vec3(1.0f, 0.0f, 0.0f));
 				vec3 TX = cross(N, temp).normalized();
 				vec3 TY = cross(N, TX);
 
-				vec3 acc = vec3(0.0f);
-                // Uniform sampling
-                float sampleDeltaPhi = 2.0 * M_PI / sqrt(samples);
-                float sampleDeltaTheta = 0.5 * M_PI / sqrt(samples);
-                for(float phi = 0.0; phi < 2.0 * M_PI; phi += sampleDeltaPhi)
-                {
-                    for(float theta = 0.0; theta < 0.5 * M_PI; theta += sampleDeltaTheta)
-                    {
-                        // spherical to cartesian (in tangent space)
-                        vec3 dir = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
-                        vec3 world_dir = dir[0] * TX + dir[1] * TY + dir[2] * N;
-                        float cos_theta = std::max(0.0f, dot(world_dir, N));
-                        float sin_theta;
-                        if(cos_theta*cos_theta >= 1.0f){
-                            sin_theta = 0.0f;
-                        } else {
-                            sin_theta = sqrt(1.0f - cos_theta*cos_theta);
-                        }
-                        // float sin_theta = std::min(1.0f, sqrt(1.0f - cos_theta*cos_theta));
-                        // tangent space to world
-                        acc += lookup(world_dir) * cos_theta * sin_theta;
-                    }
+                // Importance sampling
+                vec3 acc = vec3(0.0f);
+                // float total_weight = 0.0f;
+                for(uint32_t i=0; i<samples; i++) {
+                    vec2 u = Hammersley(i, samples);   
+                    float cosTheta = sqrt(1.0 - u[1]);
+                    float sinTheta = sqrt(u[1]);
+                    float phi = 2 * M_PI * u[0];
+                    // float pdf = cosTheta * sinTheta / M_PI;
+   
+
+                    vec3 cartesianCoord =
+                        vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+
+                    vec3 sampleVector =
+                        (cartesianCoord[0] * TX + cartesianCoord[1] * TY +
+                                cartesianCoord[2] * N).normalized();
+
+                    acc += lookup(sampleVector);
                 }
 
+                acc = acc * 1.0f / float(samples) ;
+                // acc = acc * 1.0f / total_weight;
+
+
+                // Fixed pattern sampling
+                // int phiSample = 360;
+                // int thetaSample = 90;
+                // float sampleDeltaPhi = 2.0 * M_PI / phiSample;
+                // float sampleDeltaTheta = 0.5 * M_PI / thetaSample;
+                // int samples = phiSample * thetaSample;
+                // for(float phi = 0.0; phi < 2.0 * M_PI; phi += sampleDeltaPhi)
+                // {
+                //     for(float theta = 0.0; theta < 0.5 * M_PI; theta += sampleDeltaTheta)
+                //     {
+                //         // spherical to cartesian (in tangent space)
+                //         vec3 dir = vec3(sin(theta) * cos(phi),  sin(theta) * sin(phi), cos(theta));
+                //         vec3 world_dir = dir[0] * TX + dir[1] * TY + dir[2] * N;
+                //         float cos_theta = std::max(0.0f, dot(world_dir, N));
+                //         float sin_theta;
+                //         if(cos_theta*cos_theta >= 1.0f){
+                //             sin_theta = 0.0f;
+                //         } else {
+                //             sin_theta = sqrt(1.0f - cos_theta*cos_theta);
+                //         }
+                //         // float sin_theta = std::min(1.0f, sqrt(1.0f - cos_theta*cos_theta));
+                //         // tangent space to world
+                //         acc += lookup(world_dir) * cos_theta * sin_theta;
+                //     }
+                // }
+                // acc *= M_PI* 1.0f / float(samples) ; 
 
                 // Random sampling
                 // for (uint32_t i = 0; i < uint32_t(samples); ++i) {
@@ -145,7 +188,7 @@ void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out
                 //     acc += lookup(world_dir) * cos_theta;
                 // }
 
-                acc *= M_PI* 1.0f / float(samples) ; 
+                
                 // std::cout<<acc<<"\n";
                 out_data.emplace_back(acc);
             }
@@ -160,25 +203,15 @@ void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out
         out_data_rgbe.emplace_back( float_to_rgbe( pix ) );
     }
 
+    // for(int i=0; i<10; i++){
+    //     std::cout<<out_data_rgbe[i];
+    // }
+
     std::cout<<"Save to file: "<<out_file_path<<"\n";
     stbi_write_png(out_file_path.c_str(), out_size, out_size*6, 4, out_data_rgbe.data(), out_size * 4);
 }
 
 /* --------------------------- PBR --------------------------- */
-float RadicalInverse_VdC(uint bits) 
-{
-    bits = (bits << 16u) | (bits >> 16u);
-    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
-}
-
-vec2 Hammersley(uint i, uint N)
-{
-    return vec2(float(i)/float(N), RadicalInverse_VdC(i));
-} 
 
 vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 {
@@ -210,7 +243,7 @@ void prefilterEnvironmentMapPbr(std::string in_file_path, std::string out_file_p
     if (!buffer) {
         throw std::runtime_error("failed to load texture image at: "+std::string(in_file_path));
     }
-    
+
     // convert to float
     int total_pixels = texWidth*texHeight;
     uint8_t * in_data_rgbe = static_cast<uint8_t*>(buffer);
@@ -288,6 +321,7 @@ void prefilterEnvironmentMapPbr(std::string in_file_path, std::string out_file_p
                         vec3 L  = (2.0 * dot(V, H) * H - V).normalized();
 
                         float NdotL = std::max(dot(N, L), 0.0f);
+                        NdotL = std::min(NdotL, 1.0f);
                         if(NdotL > 0.0)
                         {
                             acc += lookup(L) * NdotL;
@@ -378,11 +412,13 @@ vec2 IntegrateBRDF(float NdotV, float roughness, uint32_t samples){
 void precomputeBrdfLUT(std::string out_file_path, uint32_t samples, uint32_t out_size=512) {
     std::vector<u8vec4> out_data;
     out_data.reserve(out_size*out_size);
-    for (uint32_t t = 0; t < out_size; ++t) {
-        float NdotV = (t+0.5f) / out_size;
-        for (uint32_t s = 0; s < out_size; ++s) {
-            float roughness  = (s+0.5f) / out_size;
-            vec2 v = IntegrateBRDF(NdotV, roughness, samples) * 255;
+    for (int32_t t = out_size-1; t >=0; --t) {
+        float roughness  = (t+0.5f) / out_size;
+        for (int32_t s = 0; s < out_size; ++s) {
+            float NdotV = (s+0.5f) / out_size;
+            vec2 v = IntegrateBRDF(NdotV, roughness, samples);
+            std::cout<<v;
+            v *= 255;
             out_data.emplace_back(u8vec4(static_cast<uint8_t>(v[0]),static_cast<uint8_t>(v[1]), 0,128));
         }
     }
@@ -391,8 +427,26 @@ void precomputeBrdfLUT(std::string out_file_path, uint32_t samples, uint32_t out
 
     
     stbi_write_png(out_file_path.c_str(), out_size, out_size, 4, out_data.data(), out_size * 4);
+
+    
 }
 
+void precomputeBrdfLutToBinary(std::string out_file_path, uint32_t samples, uint32_t out_size=512){
+    float *out_data = new float[out_size*out_size*2];
+    int i = 0;
+    for (int32_t t = 0; t < out_size; t++) {
+        float roughness  = (t+0.5f) / out_size;
+        for (int32_t s = 0; s < out_size; ++s) {
+            float NdotV = (s+0.5f) / out_size;
+            vec2 v = IntegrateBRDF(NdotV, roughness, samples)*255;
+            out_data[i++] = v[0];
+            out_data[i++] = v[1];
+        }
+    }
+    std::ofstream zOut(out_file_path, std::ios::out | std::ios::binary);
+    zOut.write(reinterpret_cast<char*>(out_data), out_size*out_size*2);
+    zOut.close();
+}
 
 
 
@@ -402,12 +456,13 @@ int main(int argc, char ** argv) {
         std::string flag = argv[2];
         std::string output = argv[3];
 
-        const uint32_t SAMPLES = 4096;
-        const uint32_t OUT_SIZE = 128;
-
         if(flag == LAMBERTIAN) {
-            prefilterEnvironmentMapLambertian(input, output, SAMPLES, OUT_SIZE);
+            const uint32_t OUT_SIZE = 256;
+            const uint32_t SAMPLES = 1048576;
+            prefilterEnvironmentMapLambertian(input, output, OUT_SIZE, SAMPLES);
         } else if (flag == GGX) {
+            const uint32_t SAMPLES = 1048576/4;
+            const uint32_t OUT_SIZE = 512;
             prefilterEnvironmentMapPbr(input, output, SAMPLES, OUT_SIZE, 5);
         } else {
             throw std::runtime_error("Invalid flag");
@@ -420,7 +475,7 @@ int main(int argc, char ** argv) {
         const uint32_t OUT_SIZE = 512;
 
         if (flag == LUT) {
-            precomputeBrdfLUT(output, SAMPLES, OUT_SIZE);
+            precomputeBrdfLutToBinary(output, SAMPLES, OUT_SIZE);
         } else {
             throw std::runtime_error("Invalid flag");
         }

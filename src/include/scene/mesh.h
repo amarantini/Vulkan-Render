@@ -41,10 +41,10 @@ struct Mesh {
         } else {
             loadMeshNonSimple();
         }
-        if(ENABLE_INDEX_BUFFER)
-            calculateIndices();
-        for(int i=0; i<3; i++){
-            std::cout<<"normal: "<<vertices[i].normal<<", tangent: "<<vertices[i].tangent<<", texCoord: "<<vertices[i].texCoord<<"\n";
+        calculateIndices();
+        std::cout<<"Mesh: \n";
+        for(int i=0; i<vertices.size() && i<10; i++){
+            std::cout<<"pos: "<<vertices[i].pos<<"normal: "<<vertices[i].normal<<", tangent: "<<vertices[i].tangent<<", texCoord: "<<vertices[i].texCoord<<"\n";
         }
     }
 

@@ -452,11 +452,19 @@ private:
             textureImageView = vkHelper.createImageView(textureImage, format, VK_IMAGE_ASPECT_COLOR_BIT);
         }
 
-        void createTextureSampler(VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT, VkCompareOp compareOp = VK_COMPARE_OP_ALWAYS, int mipLevels = 1, VkBorderColor borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK) {
+        void createTextureSampler(bool isRgbe = false, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT, VkCompareOp compareOp = VK_COMPARE_OP_ALWAYS, int mipLevels = 1, VkBorderColor borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK) {
+            VkFilter filter = VK_FILTER_LINEAR; 
+            VkSamplerMipmapMode samplerMipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; 
+            if(isRgbe) {
+                filter = VK_FILTER_NEAREST;
+                samplerMipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            }
+
             VkSamplerCreateInfo samplerInfo{};
             samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-            samplerInfo.magFilter = VK_FILTER_LINEAR; //oversampling
-            samplerInfo.minFilter = VK_FILTER_LINEAR; //undersampling
+            
+            samplerInfo.magFilter = filter; //oversampling
+            samplerInfo.minFilter = filter; //undersampling
             samplerInfo.addressModeU = samplerAddressMode;
             samplerInfo.addressModeV = samplerAddressMode;
             samplerInfo.addressModeW = samplerAddressMode;
@@ -469,10 +477,10 @@ private:
             samplerInfo.unnormalizedCoordinates = VK_FALSE;
             samplerInfo.compareEnable = VK_FALSE;
             samplerInfo.compareOp = compareOp;
-            samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            samplerInfo.mipmapMode = samplerMipmapMode;
             samplerInfo.mipLodBias = 0.0f;
             samplerInfo.minLod = 0.0f;
-            samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+            samplerInfo.maxLod = 4.0f;
             
             if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
                     throw std::runtime_error("failed to create texture sampler!");
@@ -485,11 +493,13 @@ private:
     struct VkTexture2D : VkTexture {
         VkTexture2D() : VkTexture() {}
 
+        TextureInfo loadLUTFromBinaryFile(const std::string texture_file_path);
+
         void load(const std::string texture_file_path, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM);
 
         void load(vec3 constant,
         VkFormat format = VK_FORMAT_R8G8B8A8_UNORM){
-            int edge_len = 16;
+            int edge_len = 4;
             uint8_t data[4*edge_len*edge_len];
             vec<uint8_t,4> constant_int = vec<uint8_t,4>(static_cast<uint8_t>(constant[0]*255), static_cast<uint8_t>(constant[1]*255),static_cast<uint8_t>(constant[2]*255), 0);
             for(int i=0; i<4*edge_len*edge_len; i+=4)
@@ -515,7 +525,7 @@ private:
 
         void load(float constant,
         VkFormat format = VK_FORMAT_R8G8B8A8_UNORM){
-            int edge_len = 16;
+            int edge_len = 4;
             uint8_t data[4*edge_len*edge_len];
             vec<uint8_t,4> constant_int = vec<uint8_t,4>(static_cast<uint8_t>(constant*255), static_cast<uint8_t>(constant*255),static_cast<uint8_t>(constant*255), 0);
             for(int i=0; i<4*edge_len*edge_len; i+=4)
@@ -543,7 +553,7 @@ private:
     struct VkTextureCube : VkTexture {
         VkTextureCube() : VkTexture() {}
 
-        void load(std::string texture_file_path, VkFormat format=VK_FORMAT_R8G8B8A8_UNORM, std::string type = ""
+        void load(std::string texture_file_path, VkFormat format=VK_FORMAT_R8G8B8A8_UNORM, std::string type = "", bool isRgbe = false
         );
 
         void createCubeTextureImage(std::vector<TextureInfo>& info, VkFormat format);
@@ -591,7 +601,7 @@ private:
                     albedo->load(lamber.albedo_texture->src, VK_FORMAT_R8G8B8A8_UNORM);
                 } else {
                     // default to (1,1,1)
-                    albedo->load(vec3(1,1,1)*255, VK_FORMAT_R8G8B8A8_UNORM);
+                    albedo->load(vec3(1,1,1), VK_FORMAT_R8G8B8A8_UNORM);
                 } 
             } 
 
@@ -604,7 +614,7 @@ private:
                     albedo->load(pbr.albedo_texture->src, VK_FORMAT_R8G8B8A8_UNORM);
                 } else {
                     // default to (1,1,1)
-                    albedo->load(vec3(1,1,1)*255, VK_FORMAT_R8G8B8A8_UNORM);
+                    albedo->load(vec3(1,1,1), VK_FORMAT_R8G8B8A8_UNORM);
                 } 
 
                 roughness = std::make_shared<VkTexture2D>();
@@ -614,7 +624,7 @@ private:
                     roughness->load(pbr.roughness_texture->src, VK_FORMAT_R8G8B8A8_UNORM);
                 } else {
                     // default to 1.0
-                    roughness->load(1.0*255, VK_FORMAT_R8G8B8A8_UNORM);
+                    roughness->load(1.0, VK_FORMAT_R8G8B8A8_UNORM);
                 } 
 
                 metalness = std::make_shared<VkTexture2D>();
@@ -677,17 +687,13 @@ private:
         void destroy(){
             vkDestroyBuffer(device, vertexBuffer, nullptr);
             vkFreeMemory(device, vertexBufferMemory, nullptr);
-            if(ENABLE_INDEX_BUFFER) {
-                vkDestroyBuffer(device, indexBuffer, nullptr);
-                vkFreeMemory(device, indexBufferMemory, nullptr);
-            }
+            vkDestroyBuffer(device, indexBuffer, nullptr);
+            vkFreeMemory(device, indexBufferMemory, nullptr);
         }
 
         void load(){
             createVertexBuffer();
-            if(ENABLE_INDEX_BUFFER) {
-                createIndexBuffer();
-            }
+            createIndexBuffer();
             material = {};
             material.load(mesh->material);
         }
@@ -706,18 +712,17 @@ private:
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-            if(ENABLE_INDEX_BUFFER) {
-                vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-                vkCmdDrawIndexed(commandBuffer,
-                                static_cast<uint32_t>(mesh->indices.size()),
-                                1,/*number of instances*/
-                                0,/*offset into the index buffer*/
-                                0,//offset to add to the indices
+            vkCmdDrawIndexed(commandBuffer,
+                            static_cast<uint32_t>(mesh->indices.size()),
+                            1,/*number of instances*/
+                            0,/*offset into the index buffer*/
+                            0,//offset to add to the indices
                                 0);//offset for instancing
-            } else {
-                vkCmdDraw(commandBuffer, static_cast<uint32_t>(mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
-            }
+
+            // With no index buffer:
+            // vkCmdDraw(commandBuffer, static_cast<uint32_t>(mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
             
         
         }
@@ -838,11 +843,6 @@ private:
             destroyHelper(lamber_models);
         }
 
-        // Debug
-        void printModels() {
-            std::cout<<"simple_models: "<<simple_models.size()<<"\n";
-            std::cout<<"simple_models: "<<env_models.size()<<"\n";
-        }
     } model_list;
 
     int vertices_count = 0;

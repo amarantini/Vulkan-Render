@@ -23,6 +23,7 @@ layout(location = 0) out struct data {
     mat3 light;
     vec3 normal; // in world space
     vec4 tangent; // in world space
+    vec3 view; // view direction in world space
     vec2 texCoord;
 } outData;
 
@@ -34,4 +35,5 @@ void main() {
     outData.normal = normalize(normalMatrix * inNormal);
     outData.tangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
     outData.texCoord = inTexCoord;
+    outData.view = normalize(vec3(ubo.eye - (pc.model * vec4(inPosition, 1.0))));
 }

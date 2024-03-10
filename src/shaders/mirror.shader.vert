@@ -24,7 +24,7 @@ layout(location = 0) out struct data {
     vec3 normal; // in world space
     vec4 tangent; // in world space
     vec2 texCoord;
-    vec3 dir; // incident ray direction from camera in world space
+    vec3 view; // incident ray direction from camera in world space
 } outData;
 
 void main() {
@@ -34,7 +34,7 @@ void main() {
     mat3 normalMatrix = mat3(pc.invModel);
     outData.normal = normalize(normalMatrix * inNormal);
     outData.tangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
-    outData.dir = vec3((pc.model * vec4(inPosition, 1.0)) - ubo.eye);
+    outData.view = normalize(vec3(ubo.eye - (pc.model * vec4(inPosition, 1.0))));
     outData.light = mat3(ubo.light);
     outData.texCoord = inTexCoord;
 

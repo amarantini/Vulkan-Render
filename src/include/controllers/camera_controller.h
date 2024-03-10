@@ -175,7 +175,7 @@ public:
     }
     
 private:
-    float move_speed = 2.0f;
+    float move_speed = 10.0f;
     float rotation_speed = 1.0f;
     // double xpos, ypos;
     float height, width;
