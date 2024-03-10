@@ -23,8 +23,13 @@ public:
         height = height_;
 
         cameras = cameras_;
-        vec3 translation = cameras.begin()->second->transform->translation;
-        qua rotation = cameras.begin()->second->transform->rotation;
+        vec3 translation = vec3();
+        qua rotation = qua();
+        if(!cameras_.empty()) {
+            translation = cameras.begin()->second->transform->translation;
+            rotation = cameras.begin()->second->transform->rotation;
+        }   
+        
         std::shared_ptr<Transform> userCamTransform = std::make_shared<Transform>("User-Camera-Transform", translation, rotation, vec3(1));
         user_camera = std::make_shared<Camera>(width / (float) height, degToRad(45.0f), 0.1, 1000.0f);
         user_camera->movable = true;
@@ -86,6 +91,10 @@ public:
         return prev_camera->getView();
     }
 
+    vec4 getEyePos(){
+        return curr_camera->getEyePos();
+    }
+
     // Move camera up, down, left, right, forward, backward, and rotat camera left and right
     void moveCamera(float deltaTime){
         if(curr_camera->movable){
@@ -136,13 +145,12 @@ public:
         std::cout<<"Switch to camera: "<<camera_itr->first<<"\n";
     }
 
-
     bool isMovable(){
         return curr_camera->movable;
     }
     
 private:
-    float move_speed = 2.0f;
+    float move_speed = 10.0f;
     float rotation_speed = 1.0f;
     // double xpos, ypos;
     float height, width;

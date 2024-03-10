@@ -35,4 +35,8 @@ struct Transform {
         }
         return parentToLocal();
     }
+
+    mat4 model() const {
+        return localToWorld();
+    }
 };

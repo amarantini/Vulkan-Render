@@ -1,5 +1,5 @@
 
-#include <_types/_uint32_t.h>
+#include <cmath>
 #include <algorithm>
 #include <cfloat>
 #include "math_util.h"
@@ -52,7 +52,64 @@ vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/){
     return start + (end - start) * t;
 }
 
+/* ---------------- Matrix ---------------- */
 
+// reference glm::compute_inverse<4, 4, T, Q, Aligned>
+mat4 inverse(const mat4 m) {
+    float Coef00 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
+    float Coef02 = m[1][2] * m[3][3] - m[3][2] * m[1][3];
+    float Coef03 = m[1][2] * m[2][3] - m[2][2] * m[1][3];
+
+    float Coef04 = m[2][1] * m[3][3] - m[3][1] * m[2][3];
+    float Coef06 = m[1][1] * m[3][3] - m[3][1] * m[1][3];
+    float Coef07 = m[1][1] * m[2][3] - m[2][1] * m[1][3];
+
+    float Coef08 = m[2][1] * m[3][2] - m[3][1] * m[2][2];
+    float Coef10 = m[1][1] * m[3][2] - m[3][1] * m[1][2];
+    float Coef11 = m[1][1] * m[2][2] - m[2][1] * m[1][2];
+
+    float Coef12 = m[2][0] * m[3][3] - m[3][0] * m[2][3];
+    float Coef14 = m[1][0] * m[3][3] - m[3][0] * m[1][3];
+    float Coef15 = m[1][0] * m[2][3] - m[2][0] * m[1][3];
+
+    float Coef16 = m[2][0] * m[3][2] - m[3][0] * m[2][2];
+    float Coef18 = m[1][0] * m[3][2] - m[3][0] * m[1][2];
+    float Coef19 = m[1][0] * m[2][2] - m[2][0] * m[1][2];
+
+    float Coef20 = m[2][0] * m[3][1] - m[3][0] * m[2][1];
+    float Coef22 = m[1][0] * m[3][1] - m[3][0] * m[1][1];
+    float Coef23 = m[1][0] * m[2][1] - m[2][0] * m[1][1];
+
+    vec4 Fac0(Coef00, Coef00, Coef02, Coef03);
+    vec4 Fac1(Coef04, Coef04, Coef06, Coef07);
+    vec4 Fac2(Coef08, Coef08, Coef10, Coef11);
+    vec4 Fac3(Coef12, Coef12, Coef14, Coef15);
+    vec4 Fac4(Coef16, Coef16, Coef18, Coef19);
+    vec4 Fac5(Coef20, Coef20, Coef22, Coef23);
+
+    vec4 Vec0(m[1][0], m[0][0], m[0][0], m[0][0]);
+    vec4 Vec1(m[1][1], m[0][1], m[0][1], m[0][1]);
+    vec4 Vec2(m[1][2], m[0][2], m[0][2], m[0][2]);
+    vec4 Vec3(m[1][3], m[0][3], m[0][3], m[0][3]);
+
+    vec4 Inv0(Vec1 * Fac0 - Vec2 * Fac1 + Vec3 * Fac2);
+    vec4 Inv1(Vec0 * Fac0 - Vec2 * Fac3 + Vec3 * Fac4);
+    vec4 Inv2(Vec0 * Fac1 - Vec1 * Fac3 + Vec3 * Fac5);
+    vec4 Inv3(Vec0 * Fac2 - Vec1 * Fac4 + Vec2 * Fac5);
+
+    vec4 SignA(+1, -1, +1, -1);
+    vec4 SignB(-1, +1, -1, +1);
+    mat4 Inverse(Inv0 * SignA, Inv1 * SignB, Inv2 * SignA, Inv3 * SignB);
+
+    vec4 Row0(Inverse[0][0], Inverse[1][0], Inverse[2][0], Inverse[3][0]);
+
+    vec4 Dot0(m[0] * Row0);
+    float Dot1 = (Dot0[0] + Dot0[1]) + (Dot0[2] + Dot0[3]);
+
+    float OneOverDeterminant = 1.0f / Dot1;
+
+    return Inverse * OneOverDeterminant;
+}
 
 /* ---------------- Transform ---------------- */
 
@@ -192,4 +249,44 @@ qua slerp(qua qStart, qua qEnd, float t /* a fraction of 1*/){
 qua angleAxis(const float& angle, const vec3& dir){
     float s = std::sin(angle * 0.5f);
     return qua(dir * s, std::cos(angle * 0.5f));
+}
+
+/* ------------------- Cubemap ------------------- */
+// Referenced from https://github.com/ixchow/15-466-ibl
+vec3 rgbe_to_float(u8vec4 col) {
+	//avoid decoding zero to a denormalized value:
+	if (col == u8vec4(0,0,0,0)) return vec3(0.0f);
+
+	int exp = int(col[3]) - 128;
+	return vec3(
+		std::ldexp(((float)col[0] + 0.5f) / 256.0f, exp),
+		std::ldexp(((float)col[1] + 0.5f) / 256.0f, exp),
+		std::ldexp(((float)col[2]+ 0.5f) / 256.0f, exp)
+	);
+}
+
+u8vec4 float_to_rgbe(vec3 col) {
+
+	float d = std::max(col[0], std::max(col[1], col[2]));
+
+	//1e-32 is from the radiance code, and is probably larger than strictly necessary:
+	if (d <= 1e-32f) {
+		return u8vec4(0,0,0,0);
+	}
+
+	int e;
+	float fac = 255.999f * (std::frexp(d, &e) / d);
+
+	//value is too large to represent, clamp to bright white:
+	if (e > 127) {
+		return u8vec4(0xff, 0xff, 0xff, 0xff);
+	}
+
+	//scale and store:
+	return u8vec4(
+		std::max(0, int32_t(col[0] * fac)),
+		std::max(0, int32_t(col[1] * fac)),
+		std::max(0, int32_t(col[2] * fac)),
+		e + 128
+	);
 }

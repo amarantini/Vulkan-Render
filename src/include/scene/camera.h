@@ -18,6 +18,10 @@ struct Camera {
     Camera(float _aspect, float _vfov, float _near, float _far)
         : aspect(_aspect), vfov(_vfov), near(_near), far(_far) {}
 
+    vec4 getEyePos() {
+        return transform->localToWorld() * vec4(0,0,0,1);
+    }
+
     mat4 getPerspective(float aspect_){
         return perspective(vfov, aspect_, near, far);
     };

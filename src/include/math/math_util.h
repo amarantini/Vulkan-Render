@@ -33,6 +33,9 @@ float degToRad(float degree);
 // Liner interpolation between 2 vec3
 vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/);
 
+/* ---------------- Matrix ---------------- */
+mat4 inverse(const mat4);
+
 /* ---------------- Transform ---------------- */
 
 /**
@@ -69,3 +72,7 @@ qua quaLerp(const qua qStart, const qua qEnd, float t);
 qua slerp(const qua qStart, const qua qEnd, float t /* a fraction of 1*/);
 // Return a quaternion from an angle and a axis
 qua angleAxis(const float& angle, const vec3& dir);
+
+/* ------------------- Cubemap ------------------- */
+vec3 rgbe_to_float(u8vec4 col);
+u8vec4 float_to_rgbe(vec3 col);

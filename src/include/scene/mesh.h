@@ -9,6 +9,7 @@
 #include "constants.h"
 #include "bbox.h"
 #include "vertex.hpp"
+#include "material.h"
 
 struct LoadInfo{
     std::string src;
@@ -23,106 +24,31 @@ struct Mesh {
     LoadInfo pos_info;
     LoadInfo normal_info;
     LoadInfo color_info;
+    LoadInfo tex_info;
+    LoadInfo tangent_info;
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     Bbox bbox;
-    bool single_file = true;
+    std::shared_ptr<Material> material;
+    bool simple; //if "simple" material, then only load position, normal and color
 
-    Mesh(std::string _name, std::string _topology, int _count, LoadInfo pos_info_, LoadInfo normal_info_, LoadInfo color_info_)
-        : name(_name), topology(_topology), count(_count), pos_info(pos_info_), normal_info(normal_info_), color_info(color_info_) {}
+    Mesh(std::string _name, std::string _topology, int _count, LoadInfo pos_info_, LoadInfo normal_info_, LoadInfo color_info_, LoadInfo tex_info_, LoadInfo tangent_info_, bool simple_)
+        : name(_name), topology(_topology), count(_count), pos_info(pos_info_), normal_info(normal_info_), color_info(color_info_), tex_info(tex_info_), tangent_info(tangent_info_), simple(simple_) {}
 
     void loadMesh(){
-        if(single_file){
-            loadMeshSingleFile();
+        if(simple){
+            loadMeshSimple();
         } else {
-            loadMeshPosition();
-            loadMeshNormal();
-            loadMeshColor();
+            loadMeshNonSimple();
         }
-        if(ENABLE_INDEX_BUFFER)
-            calculateIndices();
+        calculateIndices();
+        std::cout<<"Mesh: \n";
+        for(int i=0; i<vertices.size() && i<10; i++){
+            std::cout<<"pos: "<<vertices[i].pos<<"normal: "<<vertices[i].normal<<", tangent: "<<vertices[i].tangent<<", texCoord: "<<vertices[i].texCoord<<"\n";
+        }
     }
 
-    void loadMeshPosition(){
-        std::ifstream infile(SCENE_PATH+pos_info.src, std::ifstream::binary);
-
-        infile.seekg(0, infile.end);
-        const size_t num_elements = infile.tellg() / pos_info.stride;
-        infile.seekg(pos_info.offset);
-        
-        vertices.resize(num_elements);
-        int buffer_size = pos_info.stride - sizeof(float)*3;
-        char* buffer[buffer_size];
-        for(size_t i=0; i<num_elements; i++) {
-            Vertex& v = vertices[i];
-            float f;
-            infile.read((char*)&f, sizeof(float));
-            v.pos[0] = f;
-            infile.read((char*)&f, sizeof(float));
-            v.pos[1] = f;
-            infile.read((char*)&f, sizeof(float));
-            v.pos[2] = f;
-            bbox.enclose(v.pos);
-            
-            infile.read((char*)buffer, buffer_size);
-        }
-
-        infile.close();
-    }
-
-    void loadMeshNormal(){
-        std::ifstream infile(SCENE_PATH+normal_info.src, std::ifstream::binary);
-
-        infile.seekg(0, infile.end);
-        const size_t num_elements = infile.tellg() / normal_info.stride;
-        infile.seekg(normal_info.offset);
-        
-        int buffer_size = normal_info.stride - sizeof(float)*3;
-        char* buffer[buffer_size];
-        for(size_t i=0; i<num_elements; i++) {
-            Vertex& v = vertices[i];
-            float f;
-            infile.read((char*)&f, sizeof(float));
-            v.normal[0] = f;
-            infile.read((char*)&f, sizeof(float));
-            v.normal[1] = f;
-            infile.read((char*)&f, sizeof(float));
-            v.normal[2] = f;
-            
-            infile.read((char*)buffer, buffer_size);
-        }
-
-        infile.close();
-    }
-
-    void loadMeshColor(){
-        std::ifstream infile(SCENE_PATH+color_info.src, std::ifstream::binary);
-
-        infile.seekg(0, infile.end);
-        const size_t num_elements = infile.tellg() / color_info.stride;
-        infile.seekg(color_info.offset);
-        
-        int buffer_size = normal_info.stride - sizeof(uint8_t)*4;
-        char* buffer[buffer_size];
-        for(size_t i=0; i<num_elements; i++) {
-            Vertex& v = vertices[i];
-            uint8_t color;
-            infile.read((char*)&color, sizeof(uint8_t));
-            v.color[0] = static_cast<float>(color) / 255.0f;
-            infile.read((char*)&color, sizeof(uint8_t));
-            v.color[1] = static_cast<float>(color) / 255.0f;
-            infile.read((char*)&color, sizeof(uint8_t));
-            v.color[2] = static_cast<float>(color) / 255.0f;
-            infile.read((char*)&color, sizeof(uint8_t));
-            // v.color[3] = static_cast<float>(color);
-            
-            infile.read((char*)buffer, buffer_size);
-        }
-
-        infile.close();
-    }
-
-    void loadMeshSingleFile(){
+    void loadMeshSimple(){
         std::ifstream infile(SCENE_PATH+pos_info.src, std::ifstream::binary);
 
         infile.seekg(0, infile.end);
@@ -133,6 +59,8 @@ struct Mesh {
         for(size_t i=0; i<num_elements; i++) {
             Vertex& v = vertices[i];
             float f;
+
+            // position
             infile.read((char*)&f, sizeof(float));
             v.pos[0] = f;
             infile.read((char*)&f, sizeof(float));
@@ -140,7 +68,7 @@ struct Mesh {
             infile.read((char*)&f, sizeof(float));
             v.pos[2] = f;
             bbox.enclose(v.pos);
-
+            //normal
             infile.read((char*)&f, sizeof(float));
             v.normal[0] = f;
             infile.read((char*)&f, sizeof(float));
@@ -148,6 +76,7 @@ struct Mesh {
             infile.read((char*)&f, sizeof(float));
             v.normal[2] = f;
             
+            //color
             uint8_t color;
             infile.read((char*)&color, sizeof(uint8_t));
             v.color[0] = static_cast<float>(color) / 255.0f;
@@ -157,6 +86,65 @@ struct Mesh {
             v.color[2] = static_cast<float>(color) / 255.0f;
             infile.read((char*)&color, sizeof(uint8_t));
             // v.color[3] = static_cast<float>(color);
+
+            v.tangent = vec4(1,0,0,1);
+            v.texCoord = vec2(0);
+        }
+
+        infile.close();
+    }
+
+    void loadMeshNonSimple(){
+        std::ifstream infile(SCENE_PATH+pos_info.src, std::ifstream::binary);
+
+        infile.seekg(0, infile.end);
+        const size_t num_elements = infile.tellg() / pos_info.stride;
+        infile.seekg(pos_info.offset);
+        
+        vertices.resize(num_elements);
+        for(size_t i=0; i<num_elements; i++) {
+            Vertex& v = vertices[i];
+            float f;
+
+            // position
+            infile.read((char*)&f, sizeof(float));
+            v.pos[0] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.pos[1] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.pos[2] = f;
+            bbox.enclose(v.pos);
+            //normal
+            infile.read((char*)&f, sizeof(float));
+            v.normal[0] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.normal[1] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.normal[2] = f;
+            //tangent
+            infile.read((char*)&f, sizeof(float));
+            v.tangent[0] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.tangent[1] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.tangent[2] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.tangent[3] = f;
+            //texcoord
+            infile.read((char*)&f, sizeof(float));
+            v.texCoord[0] = f;
+            infile.read((char*)&f, sizeof(float));
+            v.texCoord[1] = f;
+            //color
+            uint8_t color;
+            infile.read((char*)&color, sizeof(uint8_t));
+            v.color[0] = static_cast<float>(color) / 255.0f;
+            infile.read((char*)&color, sizeof(uint8_t));
+            v.color[1] = static_cast<float>(color) / 255.0f;
+            infile.read((char*)&color, sizeof(uint8_t));
+            v.color[2] = static_cast<float>(color) / 255.0f;
+            infile.read((char*)&color, sizeof(uint8_t));
+            // v.color[3] = static_cast<float>(color);        
         }
 
         infile.close();
@@ -187,12 +175,10 @@ struct Mesh {
             }
         }
         
-        // std::vector<Vertex> new_vertices(vertex_to_idx.size());
         vertices.resize(vertex_to_idx.size());
         for(auto& [vertex, index]: vertex_to_idx){
             vertices[index] = vertex;
         }
-        // vertices = new_vertices;
 
     }
 };
