@@ -137,6 +137,13 @@ public:
         }
     }
 
+    vec(vec<T,4> v){
+        assert(size==3);
+        data[0] = v[0];
+        data[1] = v[1];
+        data[2] = v[2];
+    }
+
     vec(const vec&) = default;
     vec& operator=(const vec&) = default;
     ~vec() = default;

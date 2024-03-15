@@ -64,3 +64,6 @@ const std::string GGX = "--ggx";
 const std::string LUT = "--lut";
 
 const int ENVIRONMENT_MIP_LEVEL = 5;
+
+// Light
+const int MAX_LIGHT_COUNT = 10;

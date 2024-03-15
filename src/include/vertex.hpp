@@ -12,6 +12,8 @@
 #include <array>
 
 #include "mathlib.h"
+#include "light.h"
+#include "constants.h"
 
 struct Vertex {
     vec3 pos;
@@ -61,17 +63,32 @@ struct Vertex {
     }
 };
 
-struct UniformBufferObject {
+struct UniformBufferObjectScene {
     alignas(16) mat4 view;
     alignas(16) mat4 proj;
     alignas(16) mat4 light;
-    alignas(16) vec3 eye; // camera position
+    alignas(16) vec4 eye; // camera position
+    // alignas(4) uint32_t spotLightCount;
+    // alignas(4) uint32_t sphereLightCount;
+    // alignas(4) uint32_t directionalLightCount;
+    // alignas(16) SpotLight spotLights[MAX_LIGHT_COUNT];
+    // alignas(16) SphereLight sphereLights[MAX_LIGHT_COUNT];
+    // alignas(16) DirectionalLight directionalLights[MAX_LIGHT_COUNT];
+};
+
+struct UniformBufferObjectLight {
+    alignas(4) uint32_t spotLightCount;
+    alignas(4) uint32_t sphereLightCount;
+    alignas(4) uint32_t directionalLightCount;
+    alignas(16) SpotLight spotLights[MAX_LIGHT_COUNT];
+    alignas(16) SphereLight sphereLights[MAX_LIGHT_COUNT];
+    alignas(16) DirectionalLight directionalLights[MAX_LIGHT_COUNT];
+    
 };
 
 struct ModelPushConstant {
     alignas(16) mat4 model;
     alignas(16) mat4 invModel;
 };
-
 
 /* vertex_hpp */

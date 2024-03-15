@@ -36,7 +36,12 @@ void ViewerApplication::setUpScene(const std::string& file_name){
     camera_controller = std::make_shared<CameraController>(scene.getAllCameras(), width, height);
     animation_controller = std::make_shared<AnimationController>(scene.getDrivers());
     model_info_list = scene.getModelInfos();
-    environmentLightingInfo = scene.getEnvironment();
+    environment_lighting_info = scene.getEnvironment();
+    light_info_list = scene.getLightInfos();
+
+    uboLight.sphereLightCount = light_info_list.sphere_lights.size();
+    uboLight.spotLightCount = light_info_list.spot_lights.size();
+    uboLight.directionalLightCount = light_info_list.directional_lights.size();
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
@@ -376,6 +381,7 @@ void ViewerApplication::pickPysicalDevice(){
             if(deviceProperty.deviceName == physical_device_name){
                 if(isDeviceSuitable(device)){
                     physicalDevice = device;
+                    physicalDeviceProperties = deviceProperty;
                     found = true;
                     break;
                 } else {
@@ -390,6 +396,7 @@ void ViewerApplication::pickPysicalDevice(){
         for(const auto& device: devices){
             if(isDeviceSuitable(device)){
                 physicalDevice = device;
+                vkGetPhysicalDeviceProperties(device, &physicalDeviceProperties);
                 break;
             }
         }
@@ -1038,7 +1045,7 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
         if(camera_controller->isDebug()) {
             VP = camera_controller->getPrevPerspective() * camera_controller->getPrevView();
         } else {
-            VP = ubo.proj * ubo.view;
+            VP = uboScene.proj * uboScene.view;
         }
         
         model_list.render(commandBuffer, pipelineLayout, culling, VP);
@@ -1194,7 +1201,8 @@ void ViewerApplication::recreateSwapChain() {
 /* --------------- Uniform buffers --------------- */
 
 void ViewerApplication::createUniformBuffers() {
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    //create uniform buffer scene
+    VkDeviceSize bufferSize = sizeof(UniformBufferObjectScene);
 
     uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
     uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1205,19 +1213,37 @@ void ViewerApplication::createUniformBuffers() {
 
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
+
+    // Create uniform buffer light
+    VkDeviceSize lightBufferSize = sizeof(UniformBufferObjectLight);
+    vkHelper.createBuffer(lightBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, lightUniformBuffer, lightUniformBufferMemory);
+
+    vkMapMemory(device, lightUniformBufferMemory, 0, bufferSize, 0, &lightUniformBufferMapped);
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
-    ubo.proj = camera_controller->getPerspective();
-    ubo.proj[1][1] *= -1;
-    ubo.view = camera_controller->getView();
-    ubo.light = environmentLightingInfo.transform->worldToLocal(); // transform from world space to environment space
-    // std::cout<<"ubo.light: "<<ubo.light;
+    uboScene.proj = camera_controller->getPerspective();
+    uboScene.proj[1][1] *= -1;
+    uboScene.view = camera_controller->getView();
+    uboScene.light = environment_lighting_info.transform->worldToLocal(); // transform from world space to environment space
+    uboScene.eye = camera_controller->getEyePos();
+
+    memcpy(uniformBuffersMapped[currentImage], &uboScene, sizeof(uboScene));
+
+    // Load lights
+    light_info_list.update();
     
-    vec4 eyePos = camera_controller->getEyePos();
-    ubo.eye = vec3(eyePos[0], eyePos[1], eyePos[2]);
-    // std::cout<<"ubo.eye: "<<ubo.eye;
-    memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    for(size_t i=0; i<uboLight.sphereLightCount; i++){
+        uboLight.sphereLights[i] = light_info_list.sphere_lights[i];
+    }
+    for(size_t i=0; i<uboLight.spotLightCount; i++){
+        uboLight.spotLights[i] = light_info_list.spot_lights[i];
+    }
+    for(size_t i=0; i<uboLight.directionalLightCount; i++){
+        uboLight.directionalLights[i] = light_info_list.directional_lights[i];
+    }
+
+    memcpy(lightUniformBufferMapped, &uboLight, sizeof(uboLight));
 }
 
 /* --------------------- Decriptor Sets --------------------- */
@@ -1233,10 +1259,12 @@ VkDescriptorSetLayoutBinding ViewerApplication::createDescriptorSetLayoutBinding
 
 
 void ViewerApplication::createDescriptorSetLayout() {
-    VkDescriptorSetLayoutBinding uboLayoutBinding = createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,  /*binding=*/0, 1);
+    VkDescriptorSetLayoutBinding uboSceneLayoutBinding = createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,  /*binding=*/0, 1);
+    VkDescriptorSetLayoutBinding uboLightLayoutBinding = createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,  /*binding=*/9, 1);
     
 
-    std::vector<VkDescriptorSetLayoutBinding> bindings = {uboLayoutBinding, 
+    std::vector<VkDescriptorSetLayoutBinding> bindings = {
+    uboSceneLayoutBinding, 
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/1, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/2, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/3, 1),
@@ -1244,7 +1272,8 @@ void ViewerApplication::createDescriptorSetLayout() {
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/5, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/6, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/7, 1),
-    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/8, 1)};
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/8, 1),
+    uboLightLayoutBinding};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1321,11 +1350,16 @@ void ViewerApplication::VkTexture::updateDescriptorImageInfo(){
 void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model) {
     allocateDescriptorSet(model->descriptorSets);
 
+    VkDescriptorBufferInfo lightBufferInfo{};
+    lightBufferInfo.buffer = lightUniformBuffer;
+    lightBufferInfo.offset = 0;
+    lightBufferInfo.range = sizeof(UniformBufferObjectLight);
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = uniformBuffers[i];
         bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
+        bufferInfo.range = sizeof(UniformBufferObjectScene);
 
         // Add uniform buffer descriptor
         // Add normal map and displacement map is common for all material
@@ -1349,6 +1383,9 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
 
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/4, &(model->material.albedo->descriptorImageInfo), 1)
             );
+
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/9, &lightBufferInfo, 1)
+            );
         } else if(model->material.type == Material::Type::PBR) {
             // Add prefiltered (lambertian) environment, PBR environment, LUT,  albedo, metalness, roughness
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/3, &(lambertianEnvironmentMap.descriptorImageInfo), 1)
@@ -1367,6 +1404,9 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
             );
 
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/8, &(model->material.roughness->descriptorImageInfo), 1)
+            );
+
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/9, &lightBufferInfo, 1)
             );
         }
         
@@ -1630,13 +1670,13 @@ void ViewerApplication::VkTextureCube::createCubeTextureImage(std::vector<Textur
 }
 
 void ViewerApplication::loadEnvironment() {
-    if(environmentLightingInfo.exist) {
-        environmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "", true);
+    if(environment_lighting_info.exist) {
+        environmentMap.load(environment_lighting_info.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "", true);
         if(!model_info_list.lamber_models.empty() || !model_info_list.pbr_models.empty()) {
-            lambertianEnvironmentMap.load(environmentLightingInfo.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "lambertian", true);
+            lambertianEnvironmentMap.load(environment_lighting_info.texture.src, VK_FORMAT_R8G8B8A8_UNORM, "lambertian", true);
         }
         if(!model_info_list.pbr_models.empty()) {
-            std::string src = environmentLightingInfo.texture.src;
+            std::string src = environment_lighting_info.texture.src;
             pbrEnvironmentMap.load(src, VK_FORMAT_R8G8B8A8_UNORM, "pbr", true);
             
             std::string lut_file_path = src.substr(0, src.find_last_of("."))+".lut.png";

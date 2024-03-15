@@ -21,10 +21,11 @@ layout(location = 4) in vec2 inTexCoord;
 
 layout(location = 0) out struct data {
     mat3 light;
-    vec3 N; // in world space
-    vec4 tangent; // in world space
+    vec3 N; // normal in world space
+    vec4 T; // tangent in world space
+    vec3 V; // incident ray direction from camera in world space 
     vec2 texCoord;
-    vec3 V; // incident ray direction from camera in world space
+    vec3 fragPos; // vertex position in world space
 } outData;
 
 void main() {
@@ -33,7 +34,9 @@ void main() {
     mat3 normalMatrix = mat3(pc.invModel);
     outData.light = mat3(ubo.light);
     outData.N = normalize(normalMatrix * inNormal);
-    outData.tangent = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
+    outData.T = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
     outData.texCoord = inTexCoord;
-    outData.V = normalize(vec3(ubo.eye - (pc.model * vec4(inPosition, 1.0))));
+    vec4 fragPos = pc.model * vec4(inPosition, 1.0);
+    outData.fragPos = vec3(fragPos);
+    outData.V = normalize(vec3(ubo.eye - fragPos));
 }

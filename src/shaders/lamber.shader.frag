@@ -2,17 +2,28 @@
 
 #include "common.glsl"
 
+
 layout (binding = 1) uniform sampler2D normalMap;
 layout (binding = 2) uniform sampler2D displacementMap;
 layout (binding = 3) uniform samplerCube environmentMap;
 layout (binding = 4) uniform sampler2D albedoMap;
+layout (std140, binding = 9) uniform UniformBufferObjectLight {
+	int spotLightCount;
+    int sphereLightCount;
+    int directionalLightCount;
+    SpotLight spotLights[MAX_LIGHT_COUNT];
+    SphereLight sphereLights[MAX_LIGHT_COUNT];
+    DirectionalLight directionalLights[MAX_LIGHT_COUNT];
+} uboLight;
 
-layout(location = 0) in struct data {
+layout(location = 0) flat in struct data {
     mat3 light;
-    vec3 normal; // in world space
-    vec4 tangent; // in world space
-	vec2 texCoord;
-	vec3 view;
+    vec3 N; // normal in world space
+    vec4 T; // tangent in world space
+    vec3 V; // incident ray direction from camera in world space 
+    vec2 texCoord;
+    vec3 fragPos; // vertex position in world space
+	vec3 color;
 } inData;
 
 layout(location = 0) out vec4 outColor;
@@ -20,10 +31,10 @@ layout(location = 0) out vec4 outColor;
 const float height_scale = 0.1;
 
 mat3 computeTBN() {
-	vec3 N = normalize(inData.normal);
-	vec3 T = normalize(inData.tangent.xyz);
+	vec3 N = normalize(inData.N);
+	vec3 T = normalize(inData.T.xyz);
 	T = normalize(T - dot(T, N) * N);
-	vec3 B = normalize(cross(N, T) * inData.tangent.w);
+	vec3 B = normalize(cross(N, T) * inData.T.w);
 	mat3 TBN = mat3(T, B, N);
 	return TBN;
 }
@@ -79,23 +90,117 @@ vec2 ParallaxMapping(vec3 viewDir)
 	return finalTexCoords;     
 } 
 
+vec3 calculateSphereLight(SphereLight l, vec3 N, vec3 R, vec3 albedo) {
+	vec3 pos = l.pos.rgb;
+	float radius = l.others[0];
+	float limit = l.others[1];
+	vec3 color = l.color.rgb;
+	vec3 closestPoint = calculateClosestPoint(pos, inData.fragPos, R, radius);
+	vec3 L = closestPoint - inData.fragPos;
+
+	float distance = length(L);
+	L = normalize(L);
+	float attenuation = 1.0 / (distance * distance);
+	vec3 radiance = color * attenuation;   
+
+	if(limit>0) {
+		float limit_factor = max(0, pow((1-distance/limit),4));
+		radiance *= limit_factor;
+	}
+
+	float NdotL = clamp(dot(N, L), 0.0, 1.0);  
+	return radiance * NdotL; 
+}
+
+vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R, vec3 albedo) {
+	vec3 pos = l.pos.rgb;
+	float radius = l.others[0];
+	float limit = l.others[1];
+	vec3 color = l.color.rgb;
+	vec3 direction = l.direction.rgb;
+	float outter = l.others[2];
+	float inner = l.others[3];
+	vec3 closestPoint = calculateClosestPoint(pos, inData.fragPos, R, radius);
+	vec3 L = closestPoint - inData.fragPos;
+
+	float distance = length(L);
+	L = normalize(L);
+	float theta = acos(dot(L, normalize(-direction)));
+    
+	if(theta > outter) 
+	{       
+		return vec3(0.0);
+	}
+
+	float attenuation = 1.0 / (distance * distance);
+	vec3 radiance = color * attenuation; 
+	if(theta > inner) {
+		radiance *= (theta - inner) / (outter - inner);
+	}
+
+	if(limit>0) {
+		float limit_factor = max(0, pow((1-distance/limit),4));
+		radiance *= limit_factor;
+	}  
+	
+	float NdotL = clamp(dot(N, L), 0.0, 1.0);
+	return radiance * NdotL; 
+}
+
+vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R, vec3 albedo) {
+	vec3 direction = l.direction.rgb;
+	float angle = l.others[0];
+	vec3 color = l.color.rgb;
+
+	vec3 lightDir = normalize(-direction);
+	float radius = tan(angle / 2.0f);
+	vec3 centerToRay = normalize((dot(lightDir, R)*R - lightDir));
+	vec3 closestPoint = lightDir + centerToRay * radius;
+	vec3 L = closestPoint - inData.fragPos;
+	vec3 radiance = color;
+	 
+	float NdotL = clamp(dot(N, L), 0.0, 1.0);
+	return radiance * NdotL; 
+}
+
+
+vec3 calculateLights(vec3 N, vec3 R, vec3 albedo) {
+	vec3 Lo = vec3(0.0);
+	for(int i=0; i<uboLight.sphereLightCount; i++) {
+		Lo += calculateSphereLight(uboLight.sphereLights[i], N, R, albedo);
+	}
+	for(int i=0; i<uboLight.spotLightCount; i++) {
+		Lo += calculateSpotLight(uboLight.spotLights[i], N, R, albedo);
+	}
+	for(int i=0; i<uboLight.directionalLightCount; i++) {
+		Lo += calculateDirLight(uboLight.directionalLights[i], N,  R, albedo);
+	}
+	return Lo / M_PI;
+}
+
 void main() {
 	mat3 TBN = computeTBN();
 
 	// Displacement mapping
-	vec2 texCoords = ParallaxMapping(transpose(TBN) * inData.view);
+	vec2 texCoords = ParallaxMapping(transpose(TBN) * inData.V);
 	if(texCoords.x > 1.0 || texCoords.y > 1.0 || texCoords.x < 0.0 || texCoords.y < 0.0) {
 		discard;
 	}
 
 	// Normal mapping
-	vec3 normal = computeNormal(TBN, texCoords);
+	vec3 N = computeNormal(TBN, texCoords);
+	vec3 V = normalize(inData.V);
+	vec3 R = normalize(reflect(-V, N)); 
 
 	// compute radiance from rgbe
-	vec3 rad = toRadiance(texture(environmentMap, normalize(inData.light * normal)));
+	vec3 rad = toRadiance(texture(environmentMap, normalize(inData.light * N)));
 	
-	vec4 albedo = texture(albedoMap, texCoords);
-	vec3 color = rad * albedo.rbg;
+	vec3 albedo = texture(albedoMap, texCoords).rgb;
+	vec3 color = rad * albedo;
+
+	// From light sources
+	vec3 Lo = calculateLights(N, R, albedo);
+	color += Lo;
 
 	// tone mapping
 	outColor = vec4(toneMapping(color), 1.0);

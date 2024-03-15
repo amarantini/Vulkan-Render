@@ -64,8 +64,6 @@ void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out
         throw std::runtime_error("failed to load texture image at: "+std::string(in_file_path));
     }
 
-    
-
     // convert to float
     int total_pixels = texWidth*texHeight;
     uint8_t * in_data_rgbe = static_cast<uint8_t*>(buffer);
@@ -77,6 +75,7 @@ void prefilterEnvironmentMapLambertian(std::string in_file_path, std::string out
         in_data.push_back(rgb);
     }
 
+    // Referenced https://github.com/ixchow/15-466-ibl/blob/master/cubes/blur_cube.cpp for cube look up
     std::string faces[6] = {"PositiveX", "NegativeX", "PositiveY", "NegativeY", "PositiveZ", "NegativeZ"};
 
     auto lookup = [&in_data,&texWidth , &faces](vec3 const &dir) -> vec3 {
@@ -255,6 +254,7 @@ void prefilterEnvironmentMapPbr(std::string in_file_path, std::string out_file_p
         in_data.push_back(rgb);
     }
 
+    // Referenced https://github.com/ixchow/15-466-ibl/blob/master/cubes/blur_cube.cpp for cube look up
     std::string faces[6] = {"PositiveX", "NegativeX", "PositiveY", "NegativeY", "PositiveZ", "NegativeZ"};
 
     auto lookup = [&in_data,&texWidth , &faces](vec3 const &dir) -> vec3 {
@@ -313,6 +313,7 @@ void prefilterEnvironmentMapPbr(std::string in_file_path, std::string out_file_p
                     vec3 R = N; // specular reflection direction
                     vec3 V = R; // view direction
 
+                    // Reference https://learnopengl.com/PBR/IBL/Specular-IBL for ggx sampling
                     float total_weight = 0.0;
                     vec3 acc = vec3(0.0f);
                     for(uint32_t i=0; i<samples; i++) {

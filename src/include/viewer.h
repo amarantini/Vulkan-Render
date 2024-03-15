@@ -62,7 +62,8 @@ const std::vector<const char*> validationLayers = {
 
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+    VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
+    "VK_KHR_uniform_buffer_standard_layout"
 };
 
 #ifdef NDEBUG
@@ -103,6 +104,7 @@ public:
 
 private:
     ModelInfoList model_info_list;
+    LightInfoList light_info_list;
 
     std::shared_ptr<CameraController> camera_controller;
     std::shared_ptr<InputController> input_controller;
@@ -121,7 +123,8 @@ private:
     float total_time = 0.0f;
     int vertices_count = 0;
 
-    UniformBufferObject ubo = {};
+    UniformBufferObjectScene uboScene = {};
+    UniformBufferObjectLight uboLight = {};
     
     VkInstance instance;
     
@@ -129,6 +132,7 @@ private:
     
     static inline VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     static inline VkDevice device = NULL; //logical device
+    VkPhysicalDeviceProperties physicalDeviceProperties;
     
     static inline VkQueue graphicsQueue = NULL;
     VkQueue presentQueue;
@@ -190,6 +194,10 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
     static inline VkDescriptorPool descriptorPool = NULL;
+
+    VkBuffer lightUniformBuffer;
+    VkDeviceMemory lightUniformBufferMemory;
+    void* lightUniformBufferMapped;
     
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
@@ -650,7 +658,7 @@ private:
         }
     };
 
-    EnvironmentLightingInfo environmentLightingInfo;
+    EnvironmentLightingInfo environment_lighting_info;
     VkTextureCube environmentMap; //cube map texture giving radiance (in watts per steradian per square meter in each spectral band) incoming from the environment
     VkTextureCube lambertianEnvironmentMap;
     VkTextureCube pbrEnvironmentMap;

@@ -34,3 +34,47 @@ vec3 toneMapping(in vec3 radiance) {
     // tone mapping
 	return uncharted2Tonemap(radiance);
 }
+
+#define MAX_LIGHT_COUNT 10
+
+struct SphereLight { //sphere
+    // a light that emits light in all directions equally
+    // has location
+    vec4 pos; //world space
+    vec4 color; //tint * power
+    vec4 others;
+    //float radius;
+    //float limit;//no limit
+};
+
+struct SpotLight { //spot
+    // a light emits light in a cone shape
+    // has position
+    vec4 pos; //world space, calculate using model * vec4(0,0,0,1)
+    vec4 direction;  //world space, calculate using model * vec4(0,0,-1,0)
+    vec4 color; //tint * power
+    vec4 others;
+    //float radius;
+    //float outter;//fov/2
+    //float inner;//fov*(1-blend)/2
+    //float limit; //no limit
+};
+
+struct DirectionalLight { //sun 
+    // a light infinitely far away and emits light in one direction only
+    vec4 direction; 
+    vec4 color; //tint * power
+    vec4 others;
+    //float angle;
+};
+
+
+// R = reflection of view direction
+vec3 calculateClosestPoint(vec3 lightPos, vec3 fragPos, vec3 R, float radius) {
+    vec3 L = lightPos - fragPos;
+    vec3 centerToRay = dot(L, R)*R - L;
+    vec3 closestPoint = L + centerToRay * clamp(radius / length(centerToRay), 0.0f, 1.0f);
+    return closestPoint;
+}
+
+#define M_PI 3.1415926535897932384626433832795

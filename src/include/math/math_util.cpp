@@ -150,7 +150,7 @@ Return perspective matrix with
 mat4 perspective(const float vfov, const float aspect, const float near, const float far){
     //TODO: infinite perspective matrix
     float tanHalfFovInv = 1.0f / std::tan(vfov/2.0f);
-    //Referring to glm::perspectiveRH_ZO
+    //Reference: glm::perspectiveRH_ZO
     return mat4(tanHalfFovInv/aspect, 0.0f, 0.0f, 0.0f,
                 0.0f, tanHalfFovInv, 0.0f,0.0f,
                 0.0f, 0.0f, far/(near-far), -1.0f,
@@ -179,7 +179,6 @@ mat4 scaleMat(vec3 s) {
 
 // Prepare a rotation matrix (from a quaternion)
 mat4 rotationMat(qua r) {
-
     mat4 m = mat4::I;
     float qxx(r[0] * r[0]);
     float qyy(r[1] * r[1]);
@@ -230,7 +229,7 @@ qua quaLerp(const qua qStart, const qua qEnd, float t) {
 }
 
 // Slerp for quaternions
-// Referenced Scotter3D
+// Referenced Scotter3D (https://github.com/CMU-Graphics/Scotty3D)
 qua slerp(qua qStart, qua qEnd, float t /* a fraction of 1*/){
     float cosHalfTheta = dot(qStart.toVec(), qEnd.toVec());
     qua q = cosHalfTheta < 0 ? -qStart : qStart;
