@@ -90,7 +90,7 @@ vec2 ParallaxMapping(vec3 viewDir)
 	return finalTexCoords;     
 } 
 
-vec3 calculateSphereLight(SphereLight l, vec3 N, vec3 R, vec3 albedo) {
+vec3 calculateSphereLight(SphereLight l, vec3 N, vec3 R) {
 	vec3 pos = l.pos.rgb;
 	float radius = l.others[0];
 	float limit = l.others[1];
@@ -112,7 +112,7 @@ vec3 calculateSphereLight(SphereLight l, vec3 N, vec3 R, vec3 albedo) {
 	return radiance * NdotL; 
 }
 
-vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R, vec3 albedo) {
+vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R) {
 	vec3 pos = l.pos.rgb;
 	float radius = l.others[0];
 	float limit = l.others[1];
@@ -135,7 +135,7 @@ vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R, vec3 albedo) {
 	float attenuation = 1.0 / (distance * distance);
 	vec3 radiance = color * attenuation; 
 	if(theta > inner) {
-		radiance *= (theta - inner) / (outter - inner);
+		radiance *= clamp((theta - inner) / (outter - inner),0.0f,1.0f);
 	}
 
 	if(limit>0) {
@@ -147,7 +147,7 @@ vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R, vec3 albedo) {
 	return radiance * NdotL; 
 }
 
-vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R, vec3 albedo) {
+vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R) {
 	vec3 direction = l.direction.rgb;
 	float angle = l.others[0];
 	vec3 color = l.color.rgb;
@@ -164,16 +164,16 @@ vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R, vec3 albedo) {
 }
 
 
-vec3 calculateLights(vec3 N, vec3 R, vec3 albedo) {
+vec3 calculateLights(vec3 N, vec3 R) {
 	vec3 Lo = vec3(0.0);
 	for(int i=0; i<uboLight.sphereLightCount; i++) {
-		Lo += calculateSphereLight(uboLight.sphereLights[i], N, R, albedo);
+		Lo += calculateSphereLight(uboLight.sphereLights[i], N, R);
 	}
 	for(int i=0; i<uboLight.spotLightCount; i++) {
-		Lo += calculateSpotLight(uboLight.spotLights[i], N, R, albedo);
+		Lo += calculateSpotLight(uboLight.spotLights[i], N, R);
 	}
 	for(int i=0; i<uboLight.directionalLightCount; i++) {
-		Lo += calculateDirLight(uboLight.directionalLights[i], N,  R, albedo);
+		Lo += calculateDirLight(uboLight.directionalLights[i], N,  R);
 	}
 	return Lo / M_PI;
 }
@@ -199,7 +199,7 @@ void main() {
 	vec3 color = rad * albedo;
 
 	// From light sources
-	vec3 Lo = calculateLights(N, R, albedo);
+	vec3 Lo = calculateLights(N, R) * albedo;
 	color += Lo;
 
 	// tone mapping

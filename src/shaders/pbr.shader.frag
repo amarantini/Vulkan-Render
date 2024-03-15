@@ -206,7 +206,7 @@ vec3 calculateSpotLight(SpotLight l, vec3 F0, float metallness, float roughness,
 	float attenuation = 1.0 / (distance * distance);
 	vec3 radiance = color * attenuation; 
 	if(theta > inner) {
-		radiance *= (theta - inner) / (outter - inner);
+		radiance *= clamp((theta - inner) / (outter - inner),0.0f,1.0f);
 	}
 
 	if(limit>0) {
