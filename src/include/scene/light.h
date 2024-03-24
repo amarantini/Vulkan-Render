@@ -19,10 +19,12 @@ struct SphereLight { //sphere
 struct SpotLight { //spot
     // a light emits light in a cone shape
     // has position
+    mat4 lightVP = mat4(0);
     vec4 pos; //world space, calculate using model * vec4(0,0,0,1)
     vec4 direction;  //world space, calculate using model * vec4(0,0,-1,0)
     vec4 color; //tint * power
     vec4 others; //radius, limit, outter, inner
+    vec4 shadow = vec4(0,0,0,0); //shadow_res, shadow map index, 0, 0
     // float radius;
     // float outter;//fov/2
     // float inner;//fov*(1-blend)/2

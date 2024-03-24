@@ -116,28 +116,47 @@ mat4 inverse(const mat4 m) {
 /**
 Return transformation for viewing the scene from eye position (@eye)
 looking at the position (@center) with the up axis (@up)
+Reference glm: https://github.com/g-truc/glm/blob/ab913bbdd0bd10462114a17bcb65cf5a368c1f32/glm/ext/matrix_transform.inl
 */
 mat4 lookAt(const vec3 eye, const vec3 center, const vec3 up){
-    //Set up axes
-    vec3 x,y,z;
-    z = eye - center;
-    z.normalize();
-    y = up;
-    x = cross(y, z);
+    vec3 const f = (center - eye).normalized();
+    vec3 const s = (cross(f, up)).normalized();
+    vec3 const u = (cross(s, f)).normalized();
 
-    y = cross(z, x);
-
-    x.normalize();
-    y.normalize();
-
-    mat4 m(
-        x[0], y[0], z[0], 0.0f,
-        x[1], y[1], z[1], 0.0f,
-        x[2], y[2], z[2], 0.0f,
-        -dot(x,eye), -dot(y,eye), -dot(z,eye), 1.0f
-    );
-
+    mat4 m(1);
+    m[0][0] = s[0];
+    m[1][0] = s[1];
+    m[2][0] = s[2];
+    m[0][1] = u[0];
+    m[1][1] = u[1];
+    m[2][1] = u[2];
+    m[0][2] =-f[0];
+    m[1][2] =-f[1];
+    m[2][2] =-f[2];
+    m[3][0] =-dot(s, eye);
+    m[3][1] =-dot(u, eye);
+    m[3][2] = dot(f, eye);
     return m;
+    //Set up axes
+    // vec3 x,y,z;
+    // z = eye - center;
+    // z.normalize();
+    // y = up;
+    // x = cross(y, z);
+
+    // y = cross(z, x);
+
+    // x.normalize();
+    // y.normalize();
+
+    // mat4 m(
+    //     x[0], y[0], z[0], 0.0f,
+    //     x[1], y[1], z[1], 0.0f,
+    //     x[2], y[2], z[2], 0.0f,
+    //     -dot(x,eye), -dot(y,eye), -dot(z,eye), 1.0f
+    // );
+
+    // return m;
 }
 
 /**

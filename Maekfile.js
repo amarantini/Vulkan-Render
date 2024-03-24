@@ -207,6 +207,12 @@ const mirror_vert_spv = maek.GLSLC("./src/shaders/mirror.shader.vert", "./src/sh
 const pbr_frag_spv = maek.GLSLC("./src/shaders/pbr.shader.frag", "./src/shaders/bin/pbr.frag");
 const pbr_vert_spv = maek.GLSLC("./src/shaders/pbr.shader.vert", "./src/shaders/bin/pbr.vert");
 
+const depth_frag_spv = maek.GLSLC("./src/shaders/depth.shader.frag", "./src/shaders/bin/depth.frag");
+const depth_vert_spv = maek.GLSLC("./src/shaders/depth.shader.vert", "./src/shaders/bin/depth.vert");
+
+const shadow_debug_frag_spv = maek.GLSLC("./src/shaders/shadow.debug.shader.frag", "./src/shaders/bin/shadow.debug.frag");
+const shadow_debugdepth_vert_spv = maek.GLSLC("./src/shaders/shadow.debug.shader.vert", "./src/shaders/bin/shadow.debug.vert");
+
 
 maek.TARGETS.push("./src/shaders/bin/simple.frag" + maek.options.spirvSuffix,
 				"./src/shaders/bin/simple.vert" + maek.options.spirvSuffix,
@@ -217,7 +223,11 @@ maek.TARGETS.push("./src/shaders/bin/simple.frag" + maek.options.spirvSuffix,
 				"./src/shaders/bin/mirror.frag" + maek.options.spirvSuffix,
 				"./src/shaders/bin/mirror.vert" + maek.options.spirvSuffix,
 				"./src/shaders/bin/pbr.frag" + maek.options.spirvSuffix,
-				"./src/shaders/bin/pbr.vert" + maek.options.spirvSuffix,);
+				"./src/shaders/bin/pbr.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/depth.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/depth.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/shadow.debug.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/shadow.debug.vert" + maek.options.spirvSuffix,);
 
 
 

@@ -2,14 +2,11 @@
 #include "math/math_util.h"
 #include "scene/material.h"
 #include "vk/vk_debug.h"
-#include "vk/vk_helper.h"
 #include "file.hpp"
 
 #include <cfloat>
 #include <memory>
 #include <stdexcept>
-#include <string>
-#include <vector>
 #include <fstream>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -42,6 +39,14 @@ void ViewerApplication::setUpScene(const std::string& file_name){
     uboLight.sphereLightCount = light_info_list.sphere_lights.size();
     uboLight.spotLightCount = light_info_list.spot_lights.size();
     uboLight.directionalLightCount = light_info_list.directional_lights.size();
+
+    //Debug offset
+    // std::cout<<"Offset of spotLightCount: "<<offsetof(UniformBufferObjectLight,spotLightCount)<<"\n";
+    // std::cout<<"Offset of sphereLightCount: "<<offsetof(UniformBufferObjectLight,sphereLightCount)<<"\n";
+    // std::cout<<"Offset of directionalLightCount: "<<offsetof(UniformBufferObjectLight,directionalLightCount)<<"\n";
+    // std::cout<<"Offset of sphereLights: "<<offsetof(UniformBufferObjectLight,sphereLights)<<"\n";
+    // std::cout<<"Offset of spotLights: "<<offsetof(UniformBufferObjectLight,spotLights)<<"\n";
+    // std::cout<<"Offset of directionalLights: "<<offsetof(UniformBufferObjectLight,directionalLights)<<"\n";
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
@@ -145,13 +150,16 @@ void ViewerApplication::initVulkan(){
     createCommandPool();
     createDepthResources();
     createFramebuffers();
+    createShadowMapPasses();
 
     loadEnvironment();
     createModels();
 
     createUniformBuffers();
     createDescriptorPool();
+    
     createDescriptorSets();
+    
     createCommandBuffers();
     createSyncObjects();
 }
@@ -195,9 +203,11 @@ void ViewerApplication::cleanUp(){
     destroyEnvironment();
     
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-        vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+        uniformBuffers[i].destroy();
+        lightUniformBuffers[i].destroy();
     }
+    
+    shadowMapPassList.destroy();
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -692,10 +702,10 @@ void ViewerApplication::createGraphicsPipeline() {
         VK_DYNAMIC_STATE_SCISSOR
     };
 
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
+    VkPipelineDynamicStateCreateInfo dynamicStateInfo{};
+    dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicStateInfo.pDynamicStates = dynamicStates.data();
     
     // Fixed function stage
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -808,7 +818,7 @@ void ViewerApplication::createGraphicsPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.pDynamicState = &dynamicStateInfo;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
@@ -856,6 +866,40 @@ void ViewerApplication::createGraphicsPipeline() {
     VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.pbr), "Failed to create pipeline!");
     vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
     vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+    // Debug shadow pipeline
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    // Empty vertex input state
+    VkPipelineVertexInputStateCreateInfo emptyInputState {};
+    emptyInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    pipelineInfo.pVertexInputState = &emptyInputState;
+    shaderStages[0] = loadShader(DEBUG_SHADOW_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
+    shaderStages[1] = loadShader(DEBUG_SHADOW_FSHADER, VK_SHADER_STAGE_FRAGMENT_BIT);
+    std::cout<<"Create Debug shadow pipeline\n";
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.debug), "Failed to create pipeline!");
+    vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+    vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+    // Shadow pipeline
+    shaderStages[0] = loadShader(SHADOW_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.stageCount = 1;
+    // No blend attachment states (no color attachments used)
+    colorBlending.attachmentCount = 0;
+    // Disable culling, so all faces contribute to shadows
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;//VK_CULL_MODE_NONE;//
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    // Enable depth bias
+    rasterizer.depthBiasEnable = VK_TRUE;
+    // Add depth bias to dynamic state, so we can change it at runtime
+    dynamicStates.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
+    dynamicStateInfo.pDynamicStates = dynamicStates.data();
+    dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    pipelineInfo.renderPass = shadowMapPassList.renderPass;
+    std::cout<<"Create Shadow pipeline\n";
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.shadow), "Failed to create pipeline!");
+    vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+    
 }
 
 VkShaderModule ViewerApplication::createShaderModule(const std::vector<char>& code) {
@@ -940,6 +984,8 @@ void ViewerApplication::createRenderPass() {
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass!");
     }
+
+    shadowMapPassList.createRenderpass();
 }
 
 /* ----------- Frame Buffer  ----------- */
@@ -997,66 +1043,143 @@ void ViewerApplication::createCommandBuffers() {
     }
 }
 
+VkViewport ViewerApplication::createViewPort(float width, float height, float minDepth = 0.0f, float maxDepth = 1.0f) {
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = width;
+    viewport.height = height;
+    viewport.minDepth = minDepth;
+    viewport.maxDepth = maxDepth;
+    return viewport;
+}
+
+VkRect2D ViewerApplication::createScissor(int32_t width, int32_t height, int32_t offsetX, int32_t offsetY) {
+    VkRect2D rect2D {};
+    rect2D.extent.width = width;
+    rect2D.extent.height = height;
+    rect2D.offset.x = offsetX;
+    rect2D.offset.y = offsetY;
+    return rect2D;
+}
+
 void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = 0; // Optional
     beginInfo.pInheritanceInfo = nullptr; // Optional
 
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        throw std::runtime_error("failed to begin recording command buffer!");
-    }
-    
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapChainExtent;
-    
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
-    
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    
-    
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChainExtent.width);
-    viewport.height = static_cast<float>(swapChainExtent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo), "failed to begin recording command buffer!");
 
+    std::array<VkClearValue, 2> clearValues{};
+    VkViewport viewport{};
     VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapChainExtent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     
-    if(culling == CULLING_NONE) {
-        model_list.render(commandBuffer, pipelineLayout);
-    } else if (culling == CULLING_FRUSTUM){
-        // frustum culling
-        mat4 VP;
-        if(camera_controller->isDebug()) {
-            VP = camera_controller->getPrevPerspective() * camera_controller->getPrevView();
+    /*
+        Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmapping/shadowmapping.cpp
+        First render pass: Generate shadow map by rendering the scene from light's POV
+    */
+    {   
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = shadowMapPassList.renderPass;
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.clearValueCount = 1;
+        
+        clearValues[0].depthStencil = {1.0f, 0};
+        renderPassInfo.pClearValues = clearValues.data();
+
+        // Set depth bias (aka "Polygon offset")
+        // Required to avoid shadow mapping artifacts
+        vkCmdSetDepthBias(
+            commandBuffer,
+            DEPTH_BIAS_CONSTANT,
+            0.0f,
+            DEPTH_BIAS_SLOPE);
+        for(auto& shadowMapPass: shadowMapPassList.shadowMapPasses) {
+            renderPassInfo.framebuffer = shadowMapPass.frameBuffer;
+            
+            renderPassInfo.renderArea.extent.width = shadowMapPass.shadow_res;
+            renderPassInfo.renderArea.extent.height = shadowMapPass.shadow_res;
+
+            viewport = createViewPort((float)shadowMapPass.shadow_res, (float)shadowMapPass.shadow_res, 0.0f, 1.0f);
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+            scissor = createScissor(shadowMapPass.shadow_res, shadowMapPass.shadow_res, 0, 0);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+                
+            vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.shadow);
+ 
+            shadowMapPass.updatePushConstant();
+            // vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(mat4), sizeof(PushConstantShadow), &shadowMapPass.pcShadow);
+
+            // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.descriptorSets[currentFrame], 0, nullptr);
+
+            model_list.renderForShadowMap(commandBuffer, pipelineLayout, shadowMapPass.pcShadow);
+
+            vkCmdEndRenderPass(commandBuffer);
+        }
+    }
+
+    /*
+        Second pass: Scene rendering with applied shadow map
+    */
+    {
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChainExtent;
+        
+        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        clearValues[1].depthStencil = {1.0f, 0};
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+        
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        
+        
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChainExtent.width);
+        viewport.height = static_cast<float>(swapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        scissor.offset = {0, 0};
+        scissor.extent = swapChainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        
+
+        if(DISPLAY_SHADOW_MAP) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.debug);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.debugDescriptorSet, 0, nullptr);
+            vkCmdDraw(commandBuffer, 3, 1, 0, 0);
         } else {
-            VP = uboScene.proj * uboScene.view;
+            if(culling == CULLING_NONE) {
+                model_list.render(commandBuffer, pipelineLayout);
+            } else if (culling == CULLING_FRUSTUM){
+                // frustum culling
+                mat4 VP;
+                if(camera_controller->isDebug()) {
+                    VP = camera_controller->getPrevPerspective() * camera_controller->getPrevView();
+                } else {
+                    VP = uboScene.proj * uboScene.view;
+                }
+                
+                model_list.render(commandBuffer, pipelineLayout, culling, VP);
+            }
         }
         
-        model_list.render(commandBuffer, pipelineLayout, culling, VP);
-    }
 
-    
-    
-    vkCmdEndRenderPass(commandBuffer);
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to record command buffer!");
+        vkCmdEndRenderPass(commandBuffer);
     }
+    
+
+    VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer), "failed to record command buffer for render pass!")
 }
 
 
@@ -1205,32 +1328,41 @@ void ViewerApplication::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObjectScene);
 
     uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        vkHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i].buffer, uniformBuffers[i].bufferMemory);
 
-        vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+        vkMapMemory(device, uniformBuffers[i].bufferMemory, 0, bufferSize, 0, &uniformBuffers[i].bufferMapped);
     }
 
     // Create uniform buffer light
-    VkDeviceSize lightBufferSize = sizeof(UniformBufferObjectLight);
-    vkHelper.createBuffer(lightBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, lightUniformBuffer, lightUniformBufferMemory);
+    lightUniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDeviceSize lightBufferSize = sizeof(UniformBufferObjectLight);
+        vkHelper.createBuffer(lightBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, lightUniformBuffers[i].buffer, lightUniformBuffers[i].bufferMemory);
 
-    vkMapMemory(device, lightUniformBufferMemory, 0, bufferSize, 0, &lightUniformBufferMapped);
+        vkMapMemory(device, lightUniformBuffers[i].bufferMemory, 0, lightBufferSize, 0, &lightUniformBuffers[i].bufferMapped);
+    }
+
+    // Create uniform buffer shadow
+    VkDeviceSize shadowBufferSize = sizeof(UniformBufferObjectShadow);
+    vkHelper.createBuffer(shadowBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, shadowMapPassList.uniformBuffer.buffer, shadowMapPassList.uniformBuffer.bufferMemory);
+
+    vkMapMemory(device, shadowMapPassList.uniformBuffer.bufferMemory, 0, shadowBufferSize, 0, &shadowMapPassList.uniformBuffer.bufferMapped);
+
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
+    // Update scene
     uboScene.proj = camera_controller->getPerspective();
     uboScene.proj[1][1] *= -1;
     uboScene.view = camera_controller->getView();
     uboScene.light = environment_lighting_info.transform->worldToLocal(); // transform from world space to environment space
     uboScene.eye = camera_controller->getEyePos();
 
-    memcpy(uniformBuffersMapped[currentImage], &uboScene, sizeof(uboScene));
+    memcpy(uniformBuffers[currentImage].bufferMapped, &uboScene, sizeof(uboScene));
 
-    // Load lights
+    // Update light
     light_info_list.update();
     
     for(size_t i=0; i<uboLight.sphereLightCount; i++){
@@ -1243,7 +1375,13 @@ void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
         uboLight.directionalLights[i] = light_info_list.directional_lights[i];
     }
 
-    memcpy(lightUniformBufferMapped, &uboLight, sizeof(uboLight));
+    // update shadow
+    for(auto& shadowMapPass: shadowMapPassList.shadowMapPasses)  {
+        // uboLight.spotLights[shadowMapPass.light_idx].lightVP = shadowMapPass.uboShadow.proj * shadowMapPass.uboShadow.view;
+        uboLight.spotLights[shadowMapPass.light_idx].lightVP = shadowMapPass.pcShadow.lightVP;
+    }
+
+    memcpy(lightUniformBuffers[currentImage].bufferMapped, &uboLight, sizeof(uboLight));
 }
 
 /* --------------------- Decriptor Sets --------------------- */
@@ -1273,7 +1411,9 @@ void ViewerApplication::createDescriptorSetLayout() {
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/6, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/7, 1),
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/8, 1),
-    uboLightLayoutBinding};
+    uboLightLayoutBinding,
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/10, 1),
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/11, MAX_LIGHT_COUNT)};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1286,11 +1426,15 @@ void ViewerApplication::createDescriptorSetLayout() {
 }
 
 void ViewerApplication::createDescriptorPool() {
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 1000;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 1000; //?
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 100; //?
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    poolSizes[3].descriptorCount = 10;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1309,7 +1453,7 @@ VkWriteDescriptorSet ViewerApplication::writeDescriptorSet(VkDescriptorSet descr
     descriptorWrite.dstSet = descriptorSet;
     descriptorWrite.dstBinding = dstBinding;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = descriptorCount;
     descriptorWrite.pBufferInfo = bufferInfo;
     return descriptorWrite;
@@ -1321,22 +1465,34 @@ VkWriteDescriptorSet ViewerApplication::writeDescriptorSet(VkDescriptorSet descr
     descriptorWrite.dstSet = descriptorSet;
     descriptorWrite.dstBinding = dstBinding;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = descriptorCount;
     descriptorWrite.pImageInfo = imageInfo;
     return descriptorWrite;
 }
 
-void ViewerApplication::allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets){
-    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+void ViewerApplication::allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets, int descriptorSetCount){
+    std::vector<VkDescriptorSetLayout> layouts(descriptorSetCount, descriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorSetCount);
     allocInfo.pSetLayouts = layouts.data();
     
-    descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    descriptorSets.resize(descriptorSetCount);
     if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+    }
+}
+
+void ViewerApplication::allocateSingleDescriptorSet(VkDescriptorSet& descriptorSet){
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &descriptorSetLayout;
+    
+    if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");
     }
 }
@@ -1350,14 +1506,14 @@ void ViewerApplication::VkTexture::updateDescriptorImageInfo(){
 void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model) {
     allocateDescriptorSet(model->descriptorSets);
 
-    VkDescriptorBufferInfo lightBufferInfo{};
-    lightBufferInfo.buffer = lightUniformBuffer;
-    lightBufferInfo.offset = 0;
-    lightBufferInfo.range = sizeof(UniformBufferObjectLight);
-
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo lightBufferInfo{};
+        lightBufferInfo.buffer = lightUniformBuffers[i].buffer;
+        lightBufferInfo.offset = 0;
+        lightBufferInfo.range = sizeof(UniformBufferObjectLight);
+
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
+        bufferInfo.buffer = uniformBuffers[i].buffer;
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObjectScene);
 
@@ -1386,6 +1542,15 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
 
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/9, &lightBufferInfo, 1)
             );
+
+            VkDescriptorImageInfo samplerInfo = {};
+            samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            
+            samplerInfo.sampler = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureSampler;
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/10, &samplerInfo, 1)
+            );
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfos.data(), MAX_LIGHT_COUNT)
+            );
         } else if(model->material.type == Material::Type::PBR) {
             // Add prefiltered (lambertian) environment, PBR environment, LUT,  albedo, metalness, roughness
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/3, &(lambertianEnvironmentMap.descriptorImageInfo), 1)
@@ -1408,7 +1573,17 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
 
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/9, &lightBufferInfo, 1)
             );
+            
+            VkDescriptorImageInfo samplerInfo = {};
+            samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            samplerInfo.sampler = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureSampler;
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/10, &samplerInfo, 1)
+            );
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfos.data(), MAX_LIGHT_COUNT)
+            );
+            
         }
+
         
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
     }
@@ -1418,6 +1593,10 @@ void ViewerApplication::createDescriptorSets() {
     for(auto model : model_list.getAllModels()) {
         createModelDescriptorSets(model);
     }
+    if(DISPLAY_SHADOW_MAP) {
+        createShadowMapDebugDescriptorSet();
+    }
+    
 }
 
 
@@ -1440,7 +1619,6 @@ ViewerApplication::TextureInfo ViewerApplication::VkTexture::loadFromFile(const 
     if (!info.pixels) {
         throw std::runtime_error("failed to load texture image at: "+std::string(texture_file_path));
     }
-    std::cout<<texture_file_path<<" - width, height: "<<info.texWidth<<", "<<info.texHeight<<"\n";
 
     return info;
 }
@@ -1513,7 +1691,7 @@ void ViewerApplication::VkTexture2D::load(const std::string texture_file_path, V
     
     createTextureImage(info,format);
     createTextureImageView(format);
-    createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
+    createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
     updateDescriptorImageInfo();
 }
 
@@ -1554,7 +1732,6 @@ void ViewerApplication::VkTextureCube::load(std::string texture_file_path, VkFor
         createCubeTextureImageView(format);
         createTextureSampler(isRgbe, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1);
     } else if (type == "lambertian"){
-        
         // load prefiltered environment map for lambertian diffuse
         std::string common_file_path = texture_file_path.substr(0, texture_file_path.find_last_of("."));
         std::vector<TextureInfo> infos = {loadFromFile((common_file_path+".lambertian.png").c_str(), STBI_rgb_alpha)};
@@ -1569,7 +1746,7 @@ void ViewerApplication::VkTextureCube::load(std::string texture_file_path, VkFor
         for(int i=0; i<ENVIRONMENT_MIP_LEVEL; ++i) {
             std::string mip_file_path = common_file_path+".ggx."+std::to_string(i)+".png";
             infos.push_back(loadFromFile(mip_file_path.c_str(), STBI_rgb_alpha)); 
-            std::cout<<"Mipmap "<<mip_file_path<<": "<<infos.back().texWidth<<","<<infos.back().texHeight<<"\n";
+            std::cout<<"Load mipmap "<<mip_file_path<<": "<<infos.back().texWidth<<","<<infos.back().texHeight<<"\n";
         }
         
         createCubeTextureImage(infos, format);

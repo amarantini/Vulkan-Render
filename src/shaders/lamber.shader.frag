@@ -11,10 +11,13 @@ layout (std140, binding = 9) uniform UniformBufferObjectLight {
 	int spotLightCount;
     int sphereLightCount;
     int directionalLightCount;
-    SpotLight spotLights[MAX_LIGHT_COUNT];
-    SphereLight sphereLights[MAX_LIGHT_COUNT];
+	int padding;
+	SphereLight sphereLights[MAX_LIGHT_COUNT];
+	SpotLight spotLights[MAX_LIGHT_COUNT];
     DirectionalLight directionalLights[MAX_LIGHT_COUNT];
 } uboLight;
+layout(binding = 10) uniform sampler shadowMapSampler;
+layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT];
 
 layout(location = 0) flat in struct data {
     mat3 light;
@@ -22,8 +25,7 @@ layout(location = 0) flat in struct data {
     vec4 T; // tangent in world space
     vec3 V; // incident ray direction from camera in world space 
     vec2 texCoord;
-    vec3 fragPos; // vertex position in world space
-	vec3 color;
+    vec4 fragPos; // vertex position in world space
 } inData;
 
 layout(location = 0) out vec4 outColor;
@@ -90,73 +92,105 @@ vec2 ParallaxMapping(vec3 viewDir)
 	return finalTexCoords;     
 } 
 
-vec3 calculateSphereLight(SphereLight l, vec3 N, vec3 R) {
+float calculateShadow(vec4 fragPosLightSpace, int shadow_res, int shadow_map_idx)
+{
+	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
+    // perform perspective divide, map coordinates to range [-1, 1]
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+	if (projCoords.z > 1.0)
+      return 1.0;
+
+	// map coordinates from range [-1,1] to [0,1] (Vulkan's Z is already in [0,1])
+    projCoords.xy = projCoords.xy * 0.5 + 0.5; 
+
+	// get depth of current fragment from light's perspective 
+	float currentDepth = projCoords.z;
+	
+	// check whether current frag pos is in shadow
+	// percentage-closer filtering, PCF
+	float shadow = 0.0; //percentage in shadow
+	vec2 texelSize = 1.5 * vec2(1.0 / shadow_res);
+	int range = 2;
+	int count = 0;
+	for(int x = -range; x <= range; ++x)
+	{
+		for(int y = -range; y <= range; ++y)
+		{
+			float pcfDepth = texture(sampler2D(shadowMaps[shadow_map_idx], shadowMapSampler), projCoords.xy + vec2(x, y) * texelSize).r; 
+			shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+			count++;       
+		}    
+	}
+	shadow /= count;
+
+	return shadow;
+}
+
+vec3 calculateSphereLightDiffuse(SphereLight l, vec3 N, vec3 R, vec4 fragPos) {
 	vec3 pos = l.pos.rgb;
 	float radius = l.others[0];
 	float limit = l.others[1];
 	vec3 color = l.color.rgb;
-	vec3 closestPoint = calculateClosestPoint(pos, inData.fragPos, R, radius);
-	vec3 L = closestPoint - inData.fragPos;
-
+	vec3 L = pos - vec3(fragPos);
+	
 	float distance = length(L);
 	L = normalize(L);
-	float attenuation = 1.0 / (distance * distance);
-	vec3 radiance = color * attenuation;   
-
-	if(limit>0) {
-		float limit_factor = max(0, pow((1-distance/limit),4));
-		radiance *= limit_factor;
-	}
+	
+    vec3 radiance = color;
+    float attenuation = calculateFalloff(distance, radius);
+	radiance *= attenuation;   
+	
+    float limit_factor = calculateLimit(distance, limit);
+    radiance *= limit_factor;
 
 	float NdotL = clamp(dot(N, L), 0.0, 1.0);  
 	return radiance * NdotL; 
 }
 
-vec3 calculateSpotLight(SpotLight l, vec3 N, vec3 R) {
+vec3 calculateSpotLightDiffuse(SpotLight l, vec3 N, vec3 R, vec4 fragPos) {
 	vec3 pos = l.pos.rgb;
-	float radius = l.others[0];
-	float limit = l.others[1];
 	vec3 color = l.color.rgb;
 	vec3 direction = l.direction.rgb;
+	float radius = l.others[0];
+	float limit = l.others[1];
 	float outter = l.others[2];
 	float inner = l.others[3];
-	vec3 closestPoint = calculateClosestPoint(pos, inData.fragPos, R, radius);
-	vec3 L = closestPoint - inData.fragPos;
+	
+	vec3 L = pos - vec3(fragPos);
 
 	float distance = length(L);
 	L = normalize(L);
-	float theta = acos(dot(L, normalize(-direction)));
-    
-	if(theta > outter) 
-	{       
-		return vec3(0.0);
-	}
 
-	float attenuation = 1.0 / (distance * distance);
-	vec3 radiance = color * attenuation; 
-	if(theta > inner) {
-		radiance *= clamp((theta - inner) / (outter - inner),0.0f,1.0f);
-	}
+	vec3 radiance = color;
+    float attenuation = calculateFalloff(distance, radius);
+	radiance *= attenuation;   
 
-	if(limit>0) {
-		float limit_factor = max(0, pow((1-distance/limit),4));
-		radiance *= limit_factor;
-	}  
+    float limit_factor = calculateLimit(distance, limit);
+    radiance *= limit_factor;
+
+	float cos_theta = dot(L, normalize(-direction));
+	float cos_outter = cos(outter);
+	float cos_inner = cos(inner);
+	radiance *= clamp((cos_theta - cos_outter) / (cos_inner - cos_outter), 0.0f, 1.0f);
 	
 	float NdotL = clamp(dot(N, L), 0.0, 1.0);
-	return radiance * NdotL; 
+	vec3 total_radiance = radiance * NdotL;
+
+	int shadow_res = int(l.shadow[0]);
+	int shadow_map_idx = int(l.shadow[1]);
+	float shadow = 0.0f;
+	if(shadow_res != 0) {
+		shadow = calculateShadow(l.lightVP * fragPos, shadow_res, shadow_map_idx);
+	}
+	return total_radiance * (1.0-shadow); 
 }
 
-vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R) {
+vec3 calculateDirLightDiffuse(DirectionalLight l, vec3 N, vec3 R) {
 	vec3 direction = l.direction.rgb;
-	float angle = l.others[0];
 	vec3 color = l.color.rgb;
 
-	vec3 lightDir = normalize(-direction);
-	float radius = tan(angle / 2.0f);
-	vec3 centerToRay = normalize((dot(lightDir, R)*R - lightDir));
-	vec3 closestPoint = lightDir + centerToRay * radius;
-	vec3 L = closestPoint - inData.fragPos;
+	vec3 L = normalize(-direction);
 	vec3 radiance = color;
 	 
 	float NdotL = clamp(dot(N, L), 0.0, 1.0);
@@ -164,16 +198,16 @@ vec3 calculateDirLight(DirectionalLight l, vec3 N, vec3 R) {
 }
 
 
-vec3 calculateLights(vec3 N, vec3 R) {
+vec3 calculateLightsDiffuse(vec3 N, vec3 R) {
 	vec3 Lo = vec3(0.0);
 	for(int i=0; i<uboLight.sphereLightCount; i++) {
-		Lo += calculateSphereLight(uboLight.sphereLights[i], N, R);
+		Lo += calculateSphereLightDiffuse(uboLight.sphereLights[i], N, R, inData.fragPos);
 	}
 	for(int i=0; i<uboLight.spotLightCount; i++) {
-		Lo += calculateSpotLight(uboLight.spotLights[i], N, R);
+		Lo += calculateSpotLightDiffuse(uboLight.spotLights[i], N, R, inData.fragPos);
 	}
 	for(int i=0; i<uboLight.directionalLightCount; i++) {
-		Lo += calculateDirLight(uboLight.directionalLights[i], N,  R);
+		Lo += calculateDirLightDiffuse(uboLight.directionalLights[i], N, R);
 	}
 	return Lo / M_PI;
 }
@@ -199,7 +233,7 @@ void main() {
 	vec3 color = rad * albedo;
 
 	// From light sources
-	vec3 Lo = calculateLights(N, R) * albedo;
+	vec3 Lo = calculateLightsDiffuse(N, R) * albedo;
 	color += Lo;
 
 	// tone mapping

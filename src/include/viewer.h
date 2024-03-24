@@ -15,8 +15,7 @@
 
 
 
-#include "scene/material.h"
-#include <_types/_uint8_t.h>
+
 #include <malloc/_malloc.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -47,7 +46,7 @@
 #include "controllers/window_controller.h"
 #include "controllers/animation_controller.h"
 #include "controllers/events_controller.h"
-
+#include "vk/vk_helper.h"
 
 
 
@@ -63,13 +62,13 @@ const std::vector<const char*> validationLayers = {
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
-    "VK_KHR_uniform_buffer_standard_layout"
+    VK_KHR_UNIFORM_BUFFER_STANDARD_LAYOUT_EXTENSION_NAME
 };
 
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
-const bool enableValidationLayers = true;
+const bool enableValidationLayers = false;
 #endif
 
 
@@ -157,6 +156,8 @@ private:
         VkPipeline mirror = VK_NULL_HANDLE;
         VkPipeline lamber = VK_NULL_HANDLE;
         VkPipeline pbr = VK_NULL_HANDLE;
+        VkPipeline shadow = VK_NULL_HANDLE;
+        VkPipeline debug = VK_NULL_HANDLE;
 
         Pipelines() {
             simple = VK_NULL_HANDLE;
@@ -164,6 +165,8 @@ private:
             mirror = VK_NULL_HANDLE;
             lamber = VK_NULL_HANDLE;
             pbr = VK_NULL_HANDLE;
+            shadow = VK_NULL_HANDLE;
+            debug = VK_NULL_HANDLE;
         }
 
         void destroy() {
@@ -172,6 +175,8 @@ private:
             vkDestroyPipeline(device, mirror, nullptr);
             vkDestroyPipeline(device, lamber, nullptr);
             vkDestroyPipeline(device, pbr, nullptr);
+            vkDestroyPipeline(device, shadow, nullptr);
+            vkDestroyPipeline(device, debug, nullptr);
         }
     };
     
@@ -189,15 +194,30 @@ private:
     
     bool framebufferResized = false;
     static inline uint32_t currentFrame = 0;
+
+    struct vkBuffer {
+        VkBuffer buffer;
+        VkDeviceMemory bufferMemory;
+        void* bufferMapped;
+
+        void destroy() {
+            vkDestroyBuffer(device, buffer, nullptr);
+            vkFreeMemory(device, bufferMemory, nullptr);
+        }
+    };
+
+    std::vector<vkBuffer> uniformBuffers;
     
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
-    std::vector<void*> uniformBuffersMapped;
+    // std::vector<VkBuffer> uniformBuffers;
+    // std::vector<VkDeviceMemory> uniformBuffersMemory;
+    // std::vector<void*> uniformBuffersMapped;
     static inline VkDescriptorPool descriptorPool = NULL;
 
-    VkBuffer lightUniformBuffer;
-    VkDeviceMemory lightUniformBufferMemory;
-    void* lightUniformBufferMapped;
+    std::vector<vkBuffer> lightUniformBuffers;
+
+    // VkBuffer lightUniformBuffer;
+    // VkDeviceMemory lightUniformBufferMemory;
+    // void* lightUniformBufferMapped;
     
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
@@ -297,7 +317,8 @@ private:
 			VkAccessFlags dstAccessMask,
 			VkPipelineStageFlags srcStageMask,
 			VkPipelineStageFlags dstStageMask,
-            int levelCount = 1, int layerCount = 1 ) {
+            int levelCount = 1, int layerCount = 1,
+            VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT) {
             VkCommandBuffer commandBuffer = beginSingleTimeCommands();
             
             VkImageMemoryBarrier barrier{};
@@ -309,7 +330,7 @@ private:
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image;
-            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            barrier.subresourceRange.aspectMask = aspectFlags;
             barrier.subresourceRange.baseMipLevel = 0;
             barrier.subresourceRange.levelCount = levelCount;
             barrier.subresourceRange.baseArrayLayer = 0;
@@ -523,7 +544,7 @@ private:
             
             createTextureImage(info, format);//TODO
             createTextureImageView(format);
-            createTextureSampler();
+            createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
             updateDescriptorImageInfo();
         }
 
@@ -549,7 +570,7 @@ private:
             std::memcpy(info.pixels, &data, sizeof(data));
             createTextureImage(info,format);//TODO
             createTextureImageView(format);
-            createTextureSampler();
+            createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
             updateDescriptorImageInfo();
         }
     };
@@ -731,7 +752,28 @@ private:
         
         }
 
+        void renderForShadowMap(VkCommandBuffer& commandBuffer, VkPipelineLayout& pipelineLayout, PushConstantShadow& pcShadow){
+            pcShadow.model = pc.model;
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantShadow), &pcShadow);
+
+            VkBuffer vertexBuffers[] = {vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdDrawIndexed(commandBuffer,
+                            static_cast<uint32_t>(mesh->indices.size()),
+                            1,/*number of instances*/
+                            0,/*offset into the index buffer*/
+                            0,//offset to add to the indices
+                                0);//offset for instancing
+
+            // With no index buffer:
+            // vkCmdDraw(commandBuffer, static_cast<uint32_t>(mesh->vertices.size()), 1, 0, 0);//vertexCount=3, instanceCount=1, firstVertex=0, firstInstance=0
+            
         
+        }
 
         void createVertexBuffer() {
             VkDeviceSize bufferSize = sizeof(mesh->vertices.at(0)) * mesh->vertices.size();
@@ -780,6 +822,24 @@ private:
         std::vector<std::shared_ptr<VkModel>> mirror_models;
         std::vector<std::shared_ptr<VkModel>> pbr_models;
         std::vector<std::shared_ptr<VkModel>> lamber_models;
+
+        void renderForShadowMap(VkCommandBuffer& commandBuffer, VkPipelineLayout& pipelineLayout, PushConstantShadow& pcShadow) {
+            auto renderHelper = [&commandBuffer, &pipelineLayout, &pcShadow](std::vector<std::shared_ptr<VkModel>>& models){
+                if(models.empty()) {
+                    return;
+                }
+                for(auto model: models){
+                    model->updateModel();
+                    model->renderForShadowMap(commandBuffer, pipelineLayout, pcShadow);
+                }
+                
+            };
+            // renderHelper(simple_models);
+            // renderHelper(env_models);
+            // renderHelper(mirror_models);
+            renderHelper(pbr_models);
+            renderHelper(lamber_models);
+        }
 
         void render(VkCommandBuffer& commandBuffer, VkPipelineLayout& pipelineLayout, const std::string culling=CULLING_NONE, mat4 VP=mat4::I){
             auto renderHelper = [&commandBuffer, &pipelineLayout, &VP, &culling](std::vector<std::shared_ptr<VkModel>>& models, VkPipeline& pipeline){
@@ -849,8 +909,259 @@ private:
 
     } model_list;
 
-    
+    struct ShadowMapPass {
+        VkTexture2D shadowMapTexture;
+		VkFramebuffer frameBuffer;
+        UniformBufferObjectShadow uboShadow;
+        PushConstantShadow pcShadow;
+		
+        int light_idx;
+        float vfov;
+        int shadow_res;
+        float radius;
+        float limit;
+        std::shared_ptr<Transform> transform;
 
+        const VkFormat depthFormat{ VK_FORMAT_D16_UNORM };
+
+        void initDefault(float fov, int shadow_res_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass) {
+            vfov = fov;
+            shadow_res = shadow_res_;
+            transform = transform_;
+            uboShadow = {};
+            uboShadow.proj = perspective(vfov, 1.0f, SHADOW_ZNEAR, SHADOW_ZFAR);
+            uboShadow.proj[1][1] *= -1;
+            uboShadow.zNear = SHADOW_ZNEAR;
+            uboShadow.zFar = SHADOW_ZFAR;
+            pcShadow = {};
+    
+            createOffscreenFramebuffer(renderPass, shadowMapTexture, frameBuffer);
+            vkHelper.transitionImageLayout(shadowMapTexture.textureImage, 
+            VK_IMAGE_LAYOUT_UNDEFINED, 
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            0,
+            0,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            1,
+            1,
+            VK_IMAGE_ASPECT_DEPTH_BIT);
+            updateDescriptorImageInfo(shadowMapTexture);
+        }
+
+        void init(float fov, int shadow_res_, float radius_, float limit_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass) {
+            vfov = fov;
+            shadow_res = shadow_res_;
+            radius = radius_;
+            limit = limit_;
+            transform = transform_;
+            uboShadow = {};
+            uboShadow.proj = perspective(vfov, 1.0f, radius, limit);
+            uboShadow.proj[1][1] *= -1;
+            uboShadow.zNear = radius;
+            uboShadow.zFar = limit;
+            pcShadow = {};
+
+            createOffscreenFramebuffer(renderPass, shadowMapTexture, frameBuffer);
+            updateDescriptorImageInfo(shadowMapTexture);
+        }
+
+        void updateDescriptorImageInfo(VkTexture2D& shadowMapTexture) {
+            shadowMapTexture.descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            shadowMapTexture.descriptorImageInfo.imageView = shadowMapTexture.textureImageView;
+            shadowMapTexture.descriptorImageInfo.sampler = nullptr;
+        }
+
+        void destroy() {
+            shadowMapTexture.destroy();
+            vkDestroyFramebuffer(device, frameBuffer, nullptr);
+        }
+
+        void createOffscreenFramebuffer(VkRenderPass& renderPass, VkTexture2D& shadowMapTexture, VkFramebuffer& frameBuffer) {
+            vkHelper.createImage(shadow_res, shadow_res, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowMapTexture.textureImage, shadowMapTexture.textureImageMemory);
+
+            shadowMapTexture.textureImageView = vkHelper.createImageView(shadowMapTexture.textureImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+            shadowMapTexture.createTextureSampler(false, 
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_ALWAYS, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
+
+            VkFramebufferCreateInfo frameBufferInfo{};
+            frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            frameBufferInfo.renderPass = renderPass;
+            frameBufferInfo.attachmentCount = 1;
+            frameBufferInfo.pAttachments = &shadowMapTexture.textureImageView;
+            frameBufferInfo.width = shadow_res;
+            frameBufferInfo.height = shadow_res;
+            frameBufferInfo.layers = 1;
+            VK_CHECK_RESULT(vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuffer), "fail to create framebuffer for shadow mapping");
+        }
+
+        // void updateUniformBuffer() {
+            // Calculate view matrix for spot light
+            // mat4 m = transform->localToWorld();
+            // vec4 pos = vec4(0,0,0,1);
+            // vec4 forward = vec4(0,0,-1,1);
+            // vec4 target = pos + forward;
+            // std::cout<<lookAt(m * pos, m * target, vec3(0,1,0));
+            // uboShadow.view = transform->worldToLocal();
+            
+        // }
+
+        void updatePushConstant() {
+            // Calculate view matrix for spot light
+            uboShadow.view = transform->worldToLocal();
+            pcShadow.lightVP = uboShadow.proj * uboShadow.view;
+        }
+    };
+
+    struct ShadowMapPassList {
+        ShadowMapPass defaultShawMapPass = {};
+        VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
+        VkDescriptorSet debugDescriptorSet{ VK_NULL_HANDLE };
+        VkRenderPass renderPass;
+        const VkFormat depthFormat{ VK_FORMAT_D16_UNORM };
+        vkBuffer uniformBuffer;
+        std::vector<ShadowMapPass> shadowMapPasses;
+        std::vector<VkDescriptorImageInfo> descriptorImageInfos;
+
+        void createRenderpass()
+        {
+            // Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmapping/shadowmapping.cpp
+            VkAttachmentDescription attachmentDescription{};
+            attachmentDescription.format = depthFormat;
+            attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
+            attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear depth at beginning of the render pass
+            attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // We will read from depth, so it's important to store the depth attachment results
+            attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // We don't care about initial layout of the attachment
+            attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL; // Attachment will be transitioned to shader read at render pass end
+
+            VkAttachmentReference depthReference = {};
+            depthReference.attachment = 0;
+            depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Attachment will be used as depth/stencil during render pass
+
+            VkSubpassDescription subpass = {};
+            subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            subpass.colorAttachmentCount = 0; // No color attachments
+            subpass.pDepthStencilAttachment = &depthReference; // Reference to our depth attachment
+
+            // Use subpass dependencies for layout transitions
+            std::array<VkSubpassDependency, 2> dependencies;
+
+            dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+            dependencies[0].dstSubpass = 0;
+            dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+            dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+            dependencies[1].srcSubpass = 0;
+            dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+            dependencies[1].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+            VkRenderPassCreateInfo renderPassCreateInfo = {};
+            renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            renderPassCreateInfo.attachmentCount = 1;
+            renderPassCreateInfo.pAttachments = &attachmentDescription;
+            renderPassCreateInfo.subpassCount = 1;
+            renderPassCreateInfo.pSubpasses = &subpass;
+            renderPassCreateInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+            renderPassCreateInfo.pDependencies = dependencies.data();
+
+            VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPass), "failed to create render pass");
+        }
+
+        void destroy(){
+            vkDestroyRenderPass(device, renderPass, nullptr);
+            for(auto& shadowMapPass: shadowMapPasses) {
+                shadowMapPass.destroy();
+            }
+            defaultShawMapPass.destroy();
+            uniformBuffer.destroy();
+        }
+
+        void copyUniformBuffer(UniformBufferObjectShadow& uboShadow) {
+            memcpy(uniformBuffer.bufferMapped, &uboShadow, sizeof(uboShadow));
+        }
+    };
+
+    ShadowMapPassList shadowMapPassList;
+
+    void createShadowMapDebugDescriptorSet() {
+        // for shadow map debug pipeline
+        allocateSingleDescriptorSet(shadowMapPassList.debugDescriptorSet);
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = shadowMapPassList.uniformBuffer.buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObjectShadow);
+
+        VkDescriptorImageInfo samplerInfo = {};
+        samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        
+        if(shadowMapPassList.shadowMapPasses.empty()) {
+            samplerInfo.sampler = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureSampler;
+            samplerInfo.imageView = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureImageView;
+        } else {
+            samplerInfo.sampler = shadowMapPassList.shadowMapPasses[DISPLAY_SHADOW_MAP_IDX].shadowMapTexture.textureSampler;
+            samplerInfo.imageView = shadowMapPassList.shadowMapPasses[DISPLAY_SHADOW_MAP_IDX].shadowMapTexture.textureImageView;
+            shadowMapPassList.copyUniformBuffer(shadowMapPassList.shadowMapPasses[DISPLAY_SHADOW_MAP_IDX].uboShadow);
+        }
+        
+        std::cout<<"debug shadow map: "<<samplerInfo.imageView<<"\n";
+
+        std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+            writeDescriptorSet(shadowMapPassList.debugDescriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/0, &bufferInfo, 1),
+            writeDescriptorSet(shadowMapPassList.debugDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/1, &samplerInfo, 1)};
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+   
+    }
+
+    void createShadowMapPasses() {
+        int count = 0;
+        for(uint32_t i=0; i<light_info_list.spot_lights.size(); i++) {
+            int shadow_res = light_info_list.spot_light_infos[i]->shadow_res;
+            if(shadow_res>0) {
+                ShadowMapPass shadowMapPass = {};
+                shadowMapPass.light_idx = i;
+                light_info_list.spot_lights[i].shadow[1] = count++;
+                float fov = light_info_list.spot_lights[i].others[2] * 2;
+                float radius = light_info_list.spot_lights[i].others[0];
+                float limit = light_info_list.spot_lights[i].others[1];
+                shadowMapPass.init(fov, shadow_res, radius, limit, light_info_list.spot_light_infos[i]->transform, shadowMapPassList.renderPass); 
+                shadowMapPassList.shadowMapPasses.push_back(shadowMapPass);
+                shadowMapPassList.descriptorImageInfos.push_back(shadowMapPass.shadowMapTexture.descriptorImageInfo);
+                
+            }
+        }
+        shadowMapPassList.defaultShawMapPass.initDefault(degToRad(45), 1, nullptr, shadowMapPassList.renderPass);
+        if(count == 0) {
+            // If no light needs a shadow map, fill the descriptorImageInfos with default info
+
+            shadowMapPassList.descriptorImageInfos.push_back(shadowMapPassList.defaultShawMapPass.shadowMapTexture.descriptorImageInfo);
+
+            
+        } 
+        if(count < MAX_LIGHT_COUNT) {
+            std::cout<<"Shadow map required: "<<count<<"\n";
+            // for(int i=0; i<count; i++){
+            //     int light_idx = shadowMapPassList.shadowMapPasses[i].light_idx;
+            //     std::cout<<"Light "<<light_idx<<": shadow = "<<light_info_list.spot_lights[light_idx].shadow << ", pos ="<<light_info_list.spot_lights[light_idx].pos << ", imageView 0= "<<shadowMapPassList.shadowMapPasses[light_idx].shadowMapTexture[0].descriptorImageInfo.imageView<< ", imageView 1= "<<shadowMapPassList.shadowMapPasses[light_idx].shadowMapTexture[1].descriptorImageInfo.imageView<<", frameBuffer 0= "<<shadowMapPassList.shadowMapPasses[light_idx].frameBuffers[0]<<", frameBuffer 1= "<<shadowMapPassList.shadowMapPasses[light_idx].frameBuffers[1]<<"\n";
+            // }
+            for(;count<MAX_LIGHT_COUNT; count++) {
+                shadowMapPassList.descriptorImageInfos.push_back(shadowMapPassList.defaultShawMapPass.shadowMapTexture.descriptorImageInfo);
+       
+            }
+            
+        }
+    }
 
     /* ---------------- Load models ---------------- */
     void createModels();
@@ -944,6 +1255,8 @@ private:
     
     void drawFrame();
     
+    VkViewport createViewPort(float width, float height, float minDepth, float maxDepth);
+    VkRect2D createScissor(int32_t width, int32_t height, int32_t offsetX, int32_t offsetY);
     
     /* ------- Creating the synchronization objects -------*/
     void createSyncObjects();
@@ -972,7 +1285,9 @@ private:
     
     void createDescriptorPool();
 
-    void allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets);
+    void allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets, int descriptorSetCount = MAX_FRAMES_IN_FLIGHT);
+
+    void allocateSingleDescriptorSet(VkDescriptorSet& descriptorSets);
     
     void createModelDescriptorSets(std::shared_ptr<VkModel> model);
 

@@ -1,3 +1,7 @@
+#define M_PI 3.1415926535897932384626433832795
+#define MAX_LIGHT_COUNT 10
+
+/* ---------------------- Tone mapping ---------------------- */
 vec3 uncharted2TonemapHelper(vec3 x)
 {
     float A = 0.15f;
@@ -19,6 +23,12 @@ vec3 uncharted2Tonemap(vec3 v)
     return curr * white_scale;
 }
 
+vec3 toneMapping(in vec3 radiance) {
+    // tone mapping
+	return uncharted2Tonemap(radiance);
+}
+
+/* ---------------------- RGBE ---------------------- */
 vec3 toRadiance(vec4 rgbe_) {
     if(rgbe_ == vec4(0.0, 0.0, 0.0, 0.0)) {
         return vec3(rgbe_);
@@ -30,12 +40,7 @@ vec3 toRadiance(vec4 rgbe_) {
 	return vec3(ldexp((rgbe[0]+0.5)/256.0, exp), ldexp((rgbe[1]+0.5)/256.0, exp), ldexp((rgbe[2]+0.5)/256.0, exp));
 }
 
-vec3 toneMapping(in vec3 radiance) {
-    // tone mapping
-	return uncharted2Tonemap(radiance);
-}
-
-#define MAX_LIGHT_COUNT 10
+/* ---------------------- Light ---------------------- */
 
 struct SphereLight { //sphere
     // a light that emits light in all directions equally
@@ -50,10 +55,12 @@ struct SphereLight { //sphere
 struct SpotLight { //spot
     // a light emits light in a cone shape
     // has position
+    mat4 lightVP;
     vec4 pos; //world space, calculate using model * vec4(0,0,0,1)
     vec4 direction;  //world space, calculate using model * vec4(0,0,-1,0)
     vec4 color; //tint * power
     vec4 others;
+    vec4 shadow;
     //float radius;
     //float outter;//fov/2
     //float inner;//fov*(1-blend)/2
@@ -77,4 +84,24 @@ vec3 calculateClosestPoint(vec3 lightPos, vec3 fragPos, vec3 R, float radius) {
     return closestPoint;
 }
 
-#define M_PI 3.1415926535897932384626433832795
+float calculateFalloff(float distance, float radius) {
+    if(distance < radius) {
+		return 1.0;
+	}
+    float attenuation = 1.0 / (distance * distance);
+    return attenuation;
+    /*float numerator = clamp(1-pow(distance/radius,4), 0.0, 1.0);
+    numerator *= numerator;
+    float denumerator = distance * distance + 1;
+    return numerator / denumerator;
+    */
+}
+
+float calculateLimit(float distance, float limit) {
+    if(limit>0) {
+		return max(0, 1-pow(distance/limit,4));
+	} else {
+        return 1.0;
+    }
+}
+

@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform UniformBufferObjectScene {
     mat4 view;
     mat4 proj;
     mat4 light; //light's world to local transformation
@@ -25,7 +25,7 @@ layout(location = 0) out struct data {
     vec4 T; // tangent in world space
     vec3 V; // incident ray direction from camera in world space 
     vec2 texCoord;
-    vec3 fragPos; // vertex position in world space
+    vec4 fragPos; // vertex position in world space
 } outData;
 
 void main() {
@@ -37,6 +37,6 @@ void main() {
     outData.T = vec4(normalize(normalMatrix * inTangent.xyz), inTangent.w);
     outData.texCoord = inTexCoord;
     vec4 fragPos = pc.model * vec4(inPosition, 1.0);
-    outData.fragPos = vec3(fragPos);
+    outData.fragPos = fragPos;
     outData.V = normalize(vec3(ubo.eye - fragPos));
 }
