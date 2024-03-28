@@ -1079,7 +1079,7 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
         Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmapping/shadowmapping.cpp
         First render pass: Generate shadow map by rendering the scene from light's POV
     */
-    {   
+    {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = shadowMapPassList.renderPass;
@@ -1941,8 +1941,6 @@ void ViewerApplication::eventLoop() {
         }
         
     }
-    if(does_measure)
-        std::cout<<"Total time: "<<total_time<<"\n";
     if(does_measure)
         std::cout<<"Total time: "<<total_time<<"\n";
 }
