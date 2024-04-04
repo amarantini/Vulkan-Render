@@ -211,7 +211,12 @@ const depth_frag_spv = maek.GLSLC("./src/shaders/depth.shader.frag", "./src/shad
 const depth_vert_spv = maek.GLSLC("./src/shaders/depth.shader.vert", "./src/shaders/bin/depth.vert");
 
 const shadow_debug_frag_spv = maek.GLSLC("./src/shaders/shadow.debug.shader.frag", "./src/shaders/bin/shadow.debug.frag");
-const shadow_debugdepth_vert_spv = maek.GLSLC("./src/shaders/shadow.debug.shader.vert", "./src/shaders/bin/shadow.debug.vert");
+const shadow_debug_vert_spv = maek.GLSLC("./src/shaders/shadow.debug.shader.vert", "./src/shaders/bin/shadow.debug.vert");
+
+const depth_cube_frag_spv = maek.GLSLC("./src/shaders/depth.cube.shader.frag", "./src/shaders/bin/depth.cube.frag");
+const depth_cube_vert_spv = maek.GLSLC("./src/shaders/depth.cube.shader.vert", "./src/shaders/bin/depth.cube.vert");
+
+const shadow_debug_cube_frag_spv = maek.GLSLC("./src/shaders/shadow.debug.cube.shader.frag", "./src/shaders/bin/shadow.debug.cube.frag");
 
 
 maek.TARGETS.push("./src/shaders/bin/simple.frag" + maek.options.spirvSuffix,
@@ -227,7 +232,10 @@ maek.TARGETS.push("./src/shaders/bin/simple.frag" + maek.options.spirvSuffix,
 				"./src/shaders/bin/depth.frag" + maek.options.spirvSuffix,
 				"./src/shaders/bin/depth.vert" + maek.options.spirvSuffix,
 				"./src/shaders/bin/shadow.debug.frag" + maek.options.spirvSuffix,
-				"./src/shaders/bin/shadow.debug.vert" + maek.options.spirvSuffix,);
+				"./src/shaders/bin/shadow.debug.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/depth.cube.frag" + maek.options.spirvSuffix,
+				"./src/shaders/bin/depth.cube.vert" + maek.options.spirvSuffix,
+				"./src/shaders/bin/shadow.debug.cube.frag" + maek.options.spirvSuffix);
 
 
 

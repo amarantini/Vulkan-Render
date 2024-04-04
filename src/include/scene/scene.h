@@ -137,11 +137,12 @@ struct LightInfoList {
     std::vector<SpotLight> spot_lights;
     std::vector<DirectionalLight> directional_lights;
 
-    bool shadow_mapping = false;
-
     std::vector<SphereLight> putSphereLights() {
         for(size_t i=0; i<sphere_light_infos.size(); i++) {
             sphere_lights.push_back(sphere_light_infos[i]->sphereLight());
+            if(sphere_light_infos[i]->shadow_res>0){
+                sphere_lights.back().shadow[0] = sphere_light_infos[i]->shadow_res;
+            }
         }
         return sphere_lights;
     }
@@ -150,7 +151,6 @@ struct LightInfoList {
         for(size_t i=0; i<spot_light_infos.size(); i++) {
             spot_lights.push_back(spot_light_infos[i]->spotLight());
             if(spot_light_infos[i]->shadow_res>0){
-                shadow_mapping = true;
                 spot_lights.back().shadow[0] = spot_light_infos[i]->shadow_res;
             }
         }

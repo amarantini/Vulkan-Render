@@ -62,6 +62,11 @@ const std::string SHADOW_FSHADER = SHADER_PATH+"depth.frag.spv";
 const std::string DEBUG_SHADOW_VSHADER = SHADER_PATH+"shadow.debug.vert.spv";
 const std::string DEBUG_SHADOW_FSHADER = SHADER_PATH+"shadow.debug.frag.spv";
 
+const std::string SHADOW_CUBE_VSHADER = SHADER_PATH+"depth.cube.vert.spv";
+const std::string SHADOW_CUBE_FSHADER = SHADER_PATH+"depth.cube.frag.spv";
+
+const std::string DEBUG_SHADOW_CUBE_FSHADER = SHADER_PATH+"shadow.debug.cube.frag.spv";
+
 const int MAX_DESCRIPTOR_COUNT = 6; //maximum number of texture sampler descriptor
 
 // Cube arguments
@@ -86,5 +91,6 @@ const float DEPTH_BIAS_CONSTANT = 1.25f;
 // Slope depth bias factor, applied depending on polygon's slope
 const float DEPTH_BIAS_SLOPE = 1.75f;
 // Debug shadow map by displying shadow map
-const bool DISPLAY_SHADOW_MAP = false;
+const bool DISPLAY_SHADOW_MAP_SPHERE = false;
+const bool DISPLAY_SHADOW_MAP_SPOT = false;
 const int DISPLAY_SHADOW_MAP_IDX = 1;

@@ -11,9 +11,6 @@ layout(location = 0) in struct data {
 } inData;
 layout (location = 0) out vec4 outFragColor;
 
-const float SHADOW_ZNEAR = 0.1f;
-const float SHADOW_ZFAR = 20.0f;
-
 //Reference https://github.com/SaschaWillems/Vulkan/blob/master/shaders/glsl/shadowmapping/quad.frag
 float LinearizeDepth(float depth)
 {

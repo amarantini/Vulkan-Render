@@ -36,6 +36,8 @@ vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/);
 /* ---------------- Matrix ---------------- */
 mat4 inverse(const mat4);
 
+mat4 rotate(const mat4 m, float angle, vec3 v);
+
 /* ---------------- Transform ---------------- */
 
 /**

@@ -39,14 +39,6 @@ void ViewerApplication::setUpScene(const std::string& file_name){
     uboLight.sphereLightCount = light_info_list.sphere_lights.size();
     uboLight.spotLightCount = light_info_list.spot_lights.size();
     uboLight.directionalLightCount = light_info_list.directional_lights.size();
-
-    //Debug offset
-    // std::cout<<"Offset of spotLightCount: "<<offsetof(UniformBufferObjectLight,spotLightCount)<<"\n";
-    // std::cout<<"Offset of sphereLightCount: "<<offsetof(UniformBufferObjectLight,sphereLightCount)<<"\n";
-    // std::cout<<"Offset of directionalLightCount: "<<offsetof(UniformBufferObjectLight,directionalLightCount)<<"\n";
-    // std::cout<<"Offset of sphereLights: "<<offsetof(UniformBufferObjectLight,sphereLights)<<"\n";
-    // std::cout<<"Offset of spotLights: "<<offsetof(UniformBufferObjectLight,spotLights)<<"\n";
-    // std::cout<<"Offset of directionalLights: "<<offsetof(UniformBufferObjectLight,directionalLights)<<"\n";
 }
 
 void ViewerApplication::setCamera(const std::string& camera_name) {
@@ -151,6 +143,7 @@ void ViewerApplication::initVulkan(){
     createDepthResources();
     createFramebuffers();
     createShadowMapPasses();
+    createShadowMapPassesSphere();
 
     loadEnvironment();
     createModels();
@@ -869,8 +862,7 @@ void ViewerApplication::createGraphicsPipeline() {
 
     // Debug shadow pipeline
     rasterizer.cullMode = VK_CULL_MODE_NONE;
-    // Empty vertex input state
-    VkPipelineVertexInputStateCreateInfo emptyInputState {};
+    VkPipelineVertexInputStateCreateInfo emptyInputState {}; // Empty vertex input state
     emptyInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     pipelineInfo.pVertexInputState = &emptyInputState;
     shaderStages[0] = loadShader(DEBUG_SHADOW_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
@@ -880,9 +872,26 @@ void ViewerApplication::createGraphicsPipeline() {
     vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
     vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
 
+    // Debug shadow cube pipeline
+    shaderStages[0] = loadShader(DEBUG_SHADOW_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
+    shaderStages[1] = loadShader(DEBUG_SHADOW_CUBE_FSHADER, VK_SHADER_STAGE_FRAGMENT_BIT);
+    std::cout<<"Create Debug shadow cube pipeline\n";
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.debugCube), "Failed to create pipeline!");
+    vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+    vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
+    // Shadow cube pipeline
+    shaderStages[0] = loadShader(SHADOW_CUBE_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
+    shaderStages[1] = loadShader(SHADOW_CUBE_FSHADER, VK_SHADER_STAGE_FRAGMENT_BIT);
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.renderPass = shadowMapPassList.renderPassSphere;
+    std::cout<<"Create Shadow cube pipeline\n";
+    VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.shadowCube), "Failed to create pipeline!");
+    vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
+    vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+
     // Shadow pipeline
     shaderStages[0] = loadShader(SHADOW_VSHADER, VK_SHADER_STAGE_VERTEX_BIT); 
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.stageCount = 1;
     // No blend attachment states (no color attachments used)
     colorBlending.attachmentCount = 0;
@@ -895,7 +904,7 @@ void ViewerApplication::createGraphicsPipeline() {
     dynamicStates.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
     dynamicStateInfo.pDynamicStates = dynamicStates.data();
     dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    pipelineInfo.renderPass = shadowMapPassList.renderPass;
+    pipelineInfo.renderPass = shadowMapPassList.renderPassSpot;
     std::cout<<"Create Shadow pipeline\n";
     VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &pipelines.shadow), "Failed to create pipeline!");
     vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
@@ -985,7 +994,8 @@ void ViewerApplication::createRenderPass() {
         throw std::runtime_error("failed to create render pass!");
     }
 
-    shadowMapPassList.createRenderpass();
+    shadowMapPassList.createSpotRenderPass();
+    shadowMapPassList.createSphereRenderPass();
 }
 
 /* ----------- Frame Buffer  ----------- */
@@ -1079,10 +1089,10 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
         Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmapping/shadowmapping.cpp
         First render pass: Generate shadow map by rendering the scene from light's POV
     */
-    {
+    if (shadowMapPassList.shadowMapPassesSpot.size() > 0) {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = shadowMapPassList.renderPass;
+        renderPassInfo.renderPass = shadowMapPassList.renderPassSpot;
         renderPassInfo.renderArea.offset = {0, 0};
         renderPassInfo.clearValueCount = 1;
         
@@ -1096,7 +1106,7 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
             DEPTH_BIAS_CONSTANT,
             0.0f,
             DEPTH_BIAS_SLOPE);
-        for(auto& shadowMapPass: shadowMapPassList.shadowMapPasses) {
+        for(auto& shadowMapPass: shadowMapPassList.shadowMapPassesSpot) {
             renderPassInfo.framebuffer = shadowMapPass.frameBuffer;
             
             renderPassInfo.renderArea.extent.width = shadowMapPass.shadow_res;
@@ -1110,17 +1120,50 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
                 
             vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.shadow);
- 
-            shadowMapPass.updatePushConstant();
-            // vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, sizeof(mat4), sizeof(PushConstantShadow), &shadowMapPass.pcShadow);
-
-            // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.descriptorSets[currentFrame], 0, nullptr);
 
             model_list.renderForShadowMap(commandBuffer, pipelineLayout, shadowMapPass.pcShadow);
 
             vkCmdEndRenderPass(commandBuffer);
         }
     }
+
+    // Generate shadow cubemap for sphere lights
+    if(shadowMapPassList.shadowMapPassesSphere.size()>0) {
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = shadowMapPassList.renderPassSphere;
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.clearValueCount = 2;
+        
+        clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+		clearValues[1].depthStencil = { 1.0f, 0 };
+        renderPassInfo.pClearValues = clearValues.data();
+        
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.shadowCube);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.sphereDescriptorSet, 0, nullptr);
+
+        for(auto& shadowMapPass: shadowMapPassList.shadowMapPassesSphere) {
+            renderPassInfo.renderArea.extent.width = shadowMapPass.shadow_res;
+            renderPassInfo.renderArea.extent.height = shadowMapPass.shadow_res;
+
+            viewport = createViewPort((float)shadowMapPass.shadow_res, (float)shadowMapPass.shadow_res, 0.0f, 1.0f);
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+            scissor = createScissor(shadowMapPass.shadow_res, shadowMapPass.shadow_res, 0, 0);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            for(uint32_t i=0; i<6; i++){
+                renderPassInfo.framebuffer = shadowMapPass.frameBuffers[i];
+                vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+                
+                model_list.renderForShadowMap(commandBuffer, pipelineLayout, shadowMapPass.pcCubeShadow[i]);
+
+                vkCmdEndRenderPass(commandBuffer);
+            }
+            
+        }
+    }
+
 
     /*
         Second pass: Scene rendering with applied shadow map
@@ -1154,9 +1197,13 @@ void ViewerApplication::recordCommandBuffer(VkCommandBuffer commandBuffer) {
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
         
 
-        if(DISPLAY_SHADOW_MAP) {
+        if(DISPLAY_SHADOW_MAP_SPOT) {
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.debug);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.debugDescriptorSet, 0, nullptr);
+            vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        } else if(DISPLAY_SHADOW_MAP_SPHERE) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.debugCube);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &shadowMapPassList.debugCubeDescriptorSet, 0, nullptr);
             vkCmdDraw(commandBuffer, 3, 1, 0, 0);
         } else {
             if(culling == CULLING_NONE) {
@@ -1345,11 +1392,8 @@ void ViewerApplication::createUniformBuffers() {
     }
 
     // Create uniform buffer shadow
-    VkDeviceSize shadowBufferSize = sizeof(UniformBufferObjectShadow);
-    vkHelper.createBuffer(shadowBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, shadowMapPassList.uniformBuffer.buffer, shadowMapPassList.uniformBuffer.bufferMemory);
-
-    vkMapMemory(device, shadowMapPassList.uniformBuffer.bufferMemory, 0, shadowBufferSize, 0, &shadowMapPassList.uniformBuffer.bufferMapped);
-
+    shadowMapPassList.createShadowUniformBuffer();
+    shadowMapPassList.createSphereUniformBuffer();
 }
 
 void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
@@ -1376,12 +1420,24 @@ void ViewerApplication::updateUniformBuffer(uint32_t currentImage) {
     }
 
     // update shadow
-    for(auto& shadowMapPass: shadowMapPassList.shadowMapPasses)  {
-        // uboLight.spotLights[shadowMapPass.light_idx].lightVP = shadowMapPass.uboShadow.proj * shadowMapPass.uboShadow.view;
+    for(auto& shadowMapPass: shadowMapPassList.shadowMapPassesSpot)  {
+        shadowMapPass.updatePushConstant();
         uboLight.spotLights[shadowMapPass.light_idx].lightVP = shadowMapPass.pcShadow.lightVP;
     }
 
     memcpy(lightUniformBuffers[currentImage].bufferMapped, &uboLight, sizeof(uboLight));
+
+    // Update UniformBufferObjectSphereLight for sphere light shadow map rendering
+    if(shadowMapPassList.shadowMapPassesSphere.size()>0) {
+        for(auto& shadowMapPass: shadowMapPassList.shadowMapPassesSphere)  {
+            shadowMapPass.updateSphereShadowData();
+        }
+        for(size_t i=0; i<uboLight.sphereLightCount; i++){
+            shadowMapPassList.uboSphere.sphereLights[i] = light_info_list.sphere_lights[i];
+        } 
+        shadowMapPassList.copySphereUniformBuffer();
+    }
+    
 }
 
 /* --------------------- Decriptor Sets --------------------- */
@@ -1413,7 +1469,9 @@ void ViewerApplication::createDescriptorSetLayout() {
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/8, 1),
     uboLightLayoutBinding,
     createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/10, 1),
-    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/11, MAX_LIGHT_COUNT)};
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/11, MAX_LIGHT_COUNT),
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/12, 1),
+    createDescriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, /*binding=*/13, MAX_LIGHT_COUNT)};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1434,7 +1492,7 @@ void ViewerApplication::createDescriptorPool() {
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     poolSizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 100; //?
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-    poolSizes[3].descriptorCount = 10;
+    poolSizes[3].descriptorCount = 100;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1545,11 +1603,18 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
 
             VkDescriptorImageInfo samplerInfo = {};
             samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            
-            samplerInfo.sampler = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureSampler;
+            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.textureSampler;
+
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/10, &samplerInfo, 1)
             );
-            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfos.data(), MAX_LIGHT_COUNT)
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfosSpot.data(), MAX_LIGHT_COUNT)
+            );
+
+            samplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.textureSampler;
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/12, &samplerInfo, 1)
+            );
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/13, shadowMapPassList.descriptorImageInfosSphere.data(), MAX_LIGHT_COUNT)
             );
         } else if(model->material.type == Material::Type::PBR) {
             // Add prefiltered (lambertian) environment, PBR environment, LUT,  albedo, metalness, roughness
@@ -1573,15 +1638,21 @@ void ViewerApplication::createModelDescriptorSets(std::shared_ptr<VkModel> model
 
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/9, &lightBufferInfo, 1)
             );
-            
+            // Spot light shadow map
             VkDescriptorImageInfo samplerInfo = {};
             samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            samplerInfo.sampler = shadowMapPassList.defaultShawMapPass.shadowMapTexture.textureSampler;
+            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.textureSampler;
             writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/10, &samplerInfo, 1)
             );
-            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfos.data(), MAX_LIGHT_COUNT)
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/11, shadowMapPassList.descriptorImageInfosSpot.data(), MAX_LIGHT_COUNT)
             );
-            
+            // Sphere light shadow map
+            samplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.textureSampler;
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLER, /*binding=*/12, &samplerInfo, 1)
+            );
+            writeDescriptorSets.push_back(writeDescriptorSet(model->descriptorSets[i], VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*binding=*/13, shadowMapPassList.descriptorImageInfosSphere.data(), MAX_LIGHT_COUNT)
+            );
         }
 
         
@@ -1593,8 +1664,12 @@ void ViewerApplication::createDescriptorSets() {
     for(auto model : model_list.getAllModels()) {
         createModelDescriptorSets(model);
     }
-    if(DISPLAY_SHADOW_MAP) {
+    createShadowMapSphereDescriptorSet();
+    if(DISPLAY_SHADOW_MAP_SPOT) {
         createShadowMapDebugDescriptorSet();
+    }
+    if(DISPLAY_SHADOW_MAP_SPHERE) {
+        createShadowMapDebugCubeDescriptorSet();
     }
     
 }

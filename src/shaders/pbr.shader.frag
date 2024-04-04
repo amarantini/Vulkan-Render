@@ -20,6 +20,8 @@ layout (std140, binding = 9) uniform UniformBufferObjectLight {
 } uboLight;
 layout(binding = 10) uniform sampler shadowMapSampler;
 layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT];
+layout(binding = 12) uniform sampler shadowCubemapSampler;
+layout(binding = 13) uniform textureCube shadowCubeMaps[MAX_LIGHT_COUNT]; //Shadow map for sphere light
 
 layout(location = 0) in struct data {
     mat3 light;
@@ -144,6 +146,72 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }  
 
+// =============== Light =================
+float calculateShadow(vec4 fragPosLightSpace, int shadow_res, int shadow_map_idx, vec3 N, vec3 L)
+{
+	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
+   // perform perspective divide, map coordinates to range [-1, 1]
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+	if (projCoords.z > 1.0)
+      return 1.0;
+
+	// map coordinates from range [-1,1] to [0,1] (Vulkan's Z is already in [0,1])
+    projCoords.xy = projCoords.xy * 0.5 + 0.5; 
+
+	// get depth of current fragment from light's perspective 
+	float currentDepth = projCoords.z;
+	
+	// check whether current frag pos is in shadow
+	// percentage-closer filtering, PCF
+	float shadow = 0.0; //percentage in shadow
+	vec2 texelSize = 1.5 * vec2(1.0 / shadow_res);
+	int range = 2;
+	int count = 0;
+	for(int x = -range; x <= range; ++x)
+	{
+		for(int y = -range; y <= range; ++y)
+		{
+			float pcfDepth = texture(sampler2D(shadowMaps[shadow_map_idx], shadowMapSampler), projCoords.xy + vec2(x, y) * texelSize).r; 
+			shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+			count++;       
+		}    
+	}
+	shadow /= count;
+
+	return shadow;
+}
+
+float calculateShadowCube(vec3 fragToLight, int shadow_res, int shadow_map_idx)
+{
+	// get depth of current fragment from light's perspective 
+	float currentDepth = length(fragToLight);
+	fragToLight = normalize(fragToLight);
+	
+	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
+	// check whether current frag pos is in shadow
+	// percentage-closer filtering, PCF
+	float shadow = 0.0; //percentage in shadow
+	float samples = 4.0;
+	float offset  = 0.01;
+	int count = 0;
+	float bias = 0.05; 
+	for(float x = -offset; x <= offset; x += offset / (samples * 0.5))
+	{
+		for(float y = -offset; y <= offset; y += offset / (samples * 0.5))
+		{
+			for(float z = -offset; z <= offset; z += offset / (samples * 0.5)) {
+				float pcfDepth = texture(samplerCube(shadowCubeMaps[shadow_map_idx], shadowCubemapSampler), fragToLight + vec3(x, y, z)).r; 
+				shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+				count++;  
+			}          
+		}    
+	}
+	shadow /= count;
+
+	return shadow;
+}
+
 float calculateSphereNormalization(float roughness, float radius, float distance) {
 	float a = roughness * roughness;
 	float a_p = clamp(a + radius/distance, 0, 1);
@@ -214,41 +282,6 @@ vec3 calculateDirLightDiffuse(DirectionalLight l, vec3 N, vec3 R) {
 	return radiance * NdotL; 
 }
 
-float calculateShadow(vec4 fragPosLightSpace, int shadow_res, int shadow_map_idx, vec3 N, vec3 L)
-{
-	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
-   // perform perspective divide, map coordinates to range [-1, 1]
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-
-	if (projCoords.z > 1.0)
-      return 1.0;
-
-	// map coordinates from range [-1,1] to [0,1] (Vulkan's Z is already in [0,1])
-    projCoords.xy = projCoords.xy * 0.5 + 0.5; 
-
-	// get depth of current fragment from light's perspective 
-	float currentDepth = projCoords.z;
-	
-	// check whether current frag pos is in shadow
-	// percentage-closer filtering, PCF
-	float shadow = 0.0; //percentage in shadow
-	vec2 texelSize = 1.5 * vec2(1.0 / shadow_res);
-	int range = 2;
-	int count = 0;
-	for(int x = -range; x <= range; ++x)
-	{
-		for(int y = -range; y <= range; ++y)
-		{
-			float pcfDepth = texture(sampler2D(shadowMaps[shadow_map_idx], shadowMapSampler), projCoords.xy + vec2(x, y) * texelSize).r; 
-			shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
-			count++;       
-		}    
-	}
-	shadow /= count;
-
-	return shadow;
-}
-
 vec3 calculateSphereLight(SphereLight l, vec3 F0, float metallness, float roughness, vec3 N, vec3 V, vec3 R, vec4 fragPos) {
 	// Calculate diffuse
 	vec3 diffuse = calculateSphereLightDiffuse(l, N, R, fragPos)  / M_PI;
@@ -289,7 +322,16 @@ vec3 calculateSphereLight(SphereLight l, vec3 F0, float metallness, float roughn
 	vec3 specular = numerator / denominator * radiance * NdotL;  
 	specular *= calculateSphereNormalization(roughness, radius, distance);
 
-	return kD * diffuse + specular; 
+	vec3 total_radiance = kD * diffuse + specular; 
+
+	int shadow_res = int(l.shadow[0]);
+	int shadow_map_idx = int(l.shadow[1]);
+	float shadow = 0.0f;
+	if(shadow_res != 0) {
+		vec3 fragToLight = vec3(fragPos - l.pos);
+		shadow = calculateShadowCube(fragToLight, shadow_res, shadow_map_idx);
+	}
+	return total_radiance * (1.0-shadow);
 }
 
 vec3 calculateSpotLight(SpotLight l, vec3 F0, float metallness, float roughness, vec3 N, vec3 V, vec3 R, vec4 fragPos) {
@@ -455,11 +497,11 @@ void main() {
 	
 	// Ambient
 	vec3 ambient = kD * diffuse + specular; 
+	vec3 color = ambient;
 
 	// From light sources
 	vec3 Lo = calculateLights(F0, metallness, roughness, N, V, R) * albedo;
-
-	vec3 color = ambient + Lo;
+	color += Lo;
 
 	// tone mapping
 	outColor = vec4(toneMapping(color), 1.0);

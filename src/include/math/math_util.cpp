@@ -2,6 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cfloat>
+#include <iostream>
 #include "math_util.h"
 
 /* ----------------- Vec -----------------*/
@@ -54,7 +55,7 @@ vec3 lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/){
 
 /* ---------------- Matrix ---------------- */
 
-// reference glm::compute_inverse<4, 4, T, Q, Aligned>
+// reference compute_inverse<4, 4, T, Q, Aligned>
 mat4 inverse(const mat4 m) {
     float Coef00 = m[2][2] * m[3][3] - m[3][2] * m[2][3];
     float Coef02 = m[1][2] * m[3][3] - m[3][2] * m[1][3];
@@ -111,6 +112,38 @@ mat4 inverse(const mat4 m) {
     return Inverse * OneOverDeterminant;
 }
 
+/*
+Reference https://github.com/g-truc/glm/blob/4137519418a933e5863eea7c3ac53890ae7faf9d/glm/ext/matrix_transform.inl#L17
+Rotate matrix @m for an angle @angle around axis @v
+*/
+mat4 rotate(const mat4 m, float angle, vec3 v) {
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+
+    vec3 axis = v.normalized();
+    vec3 temp = (1 - cos_a) * axis;
+
+    mat4 r;
+    r[0][0] = cos_a + temp[0] * axis[0];
+    r[0][1] = temp[0] * axis[1] + sin_a * axis[2];
+    r[0][2] = temp[0] * axis[2] - sin_a * axis[1];
+
+    r[1][0] = temp[1] * axis[0] - sin_a * axis[2];
+    r[1][1] = cos_a + temp[1] * axis[1];
+    r[1][2] = temp[1] * axis[2] + sin_a * axis[0];
+
+    r[2][0] = temp[2] * axis[0] + sin_a * axis[1];
+    r[2][1] = temp[2] * axis[1] - sin_a * axis[0];
+    r[2][2] = cos_a + temp[2] * axis[2];
+
+    mat4 result;
+    result[0] = m[0] * r[0][0] + m[1] * r[0][1] + m[2] * r[0][2];
+    result[1] = m[0] * r[1][0] + m[1] * r[1][1] + m[2] * r[1][2];
+    result[2] = m[0] * r[2][0] + m[1] * r[2][1] + m[2] * r[2][2];
+    result[3] = m[3];
+    return result;
+}
+
 /* ---------------- Transform ---------------- */
 
 /**
@@ -123,7 +156,7 @@ mat4 lookAt(const vec3 eye, const vec3 center, const vec3 up){
     vec3 const s = (cross(f, up)).normalized();
     vec3 const u = (cross(s, f)).normalized();
 
-    mat4 m(1);
+    mat4 m(0);
     m[0][0] = s[0];
     m[1][0] = s[1];
     m[2][0] = s[2];
@@ -136,27 +169,8 @@ mat4 lookAt(const vec3 eye, const vec3 center, const vec3 up){
     m[3][0] =-dot(s, eye);
     m[3][1] =-dot(u, eye);
     m[3][2] = dot(f, eye);
+    m[3][3] = 1;
     return m;
-    //Set up axes
-    // vec3 x,y,z;
-    // z = eye - center;
-    // z.normalize();
-    // y = up;
-    // x = cross(y, z);
-
-    // y = cross(z, x);
-
-    // x.normalize();
-    // y.normalize();
-
-    // mat4 m(
-    //     x[0], y[0], z[0], 0.0f,
-    //     x[1], y[1], z[1], 0.0f,
-    //     x[2], y[2], z[2], 0.0f,
-    //     -dot(x,eye), -dot(y,eye), -dot(z,eye), 1.0f
-    // );
-
-    // return m;
 }
 
 /**
@@ -169,7 +183,7 @@ Return perspective matrix with
 mat4 perspective(const float vfov, const float aspect, const float near, const float far){
     //TODO: infinite perspective matrix
     float tanHalfFovInv = 1.0f / std::tan(vfov/2.0f);
-    //Reference: glm::perspectiveRH_ZO
+    //Reference: perspectiveRH_ZO
     return mat4(tanHalfFovInv/aspect, 0.0f, 0.0f, 0.0f,
                 0.0f, tanHalfFovInv, 0.0f,0.0f,
                 0.0f, 0.0f, far/(near-far), -1.0f,

@@ -77,9 +77,18 @@ struct UniformBufferObjectShadow {
     alignas(16) mat4 proj;
 };
 
+// used in src/shaders/depth.shader.vert
+// to compute shadow map for spot light
 struct PushConstantShadow {
     alignas(16) mat4 model;
     alignas(16) mat4 lightVP;
+};
+
+// used in src/shaders/depth.cube.shader.vert
+// to compute shadow map for sphere light
+struct PushConstantCubeShadow {
+    alignas(16) mat4 model;
+    alignas(16) vec4 lightData; //face idx, light idx, *, *
 };
 
 struct UniformBufferObjectLight {
@@ -90,6 +99,11 @@ struct UniformBufferObjectLight {
     alignas(16) SphereLight sphereLights[MAX_LIGHT_COUNT];
     alignas(16) SpotLight spotLights[MAX_LIGHT_COUNT];
     alignas(16) DirectionalLight directionalLights[MAX_LIGHT_COUNT];
+};
+
+struct UniformBufferObjectSphereLight {
+    alignas(16) SphereLight sphereLights[MAX_LIGHT_COUNT];
+    alignas(16) mat4 lightVPs[MAX_LIGHT_COUNT*6];
 };
 
 struct ModelPushConstant {

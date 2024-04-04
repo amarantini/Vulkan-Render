@@ -129,6 +129,16 @@ public:
         data[1] = vec2(m01, m11);
     }
 
+    mat(
+        mat<T,4,4> m4) {
+        assert(row_size==3 && col_size==3);
+        for(size_t r=0; r<3; r++){
+            for(size_t c=0; c<3; c++){
+                data[c][r] = m4[c][r];
+            }
+        }
+    }
+
     mat(const mat&) = default;
     mat& operator=(const mat&) = default;
     ~mat() = default;

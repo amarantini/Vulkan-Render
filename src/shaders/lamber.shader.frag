@@ -17,7 +17,9 @@ layout (std140, binding = 9) uniform UniformBufferObjectLight {
     DirectionalLight directionalLights[MAX_LIGHT_COUNT];
 } uboLight;
 layout(binding = 10) uniform sampler shadowMapSampler;
-layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT];
+layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT]; //Shadow map for spot light
+layout(binding = 12) uniform sampler shadowCubemapSampler;
+layout(binding = 13) uniform textureCube shadowCubeMaps[MAX_LIGHT_COUNT]; //Shadow map for sphere light
 
 layout(location = 0) flat in struct data {
     mat3 light;
@@ -92,6 +94,36 @@ vec2 ParallaxMapping(vec3 viewDir)
 	return finalTexCoords;     
 } 
 
+float calculateShadowCube(vec3 fragToLight, int shadow_res, int shadow_map_idx, float far)
+{
+	// get depth of current fragment from light's perspective 
+	float currentDepth = length(fragToLight);
+	fragToLight = normalize(fragToLight);
+	
+	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Point-Shadows
+	// check whether current frag pos is in shadow
+	// percentage-closer filtering, PCF
+	float shadow = 0.0; //percentage in shadow
+	float samples = 4.0;
+	float offset  = 0.01;
+	int count = 0;
+	float bias = 0.05; 
+	for(float x = -offset; x <= offset; x += offset / (samples * 0.5))
+	{
+		for(float y = -offset; y <= offset; y += offset / (samples * 0.5))
+		{
+			for(float z = -offset; z <= offset; z += offset / (samples * 0.5)) {
+				float pcfDepth = texture(samplerCube(shadowCubeMaps[shadow_map_idx], shadowCubemapSampler), normalize(fragToLight + vec3(x, y, z))).r; 
+				shadow += currentDepth > pcfDepth ? 1.0 : 0.0;
+				count++;  
+			}          
+		}    
+	}
+	shadow /= count;
+
+	return shadow;
+}
+
 float calculateShadow(vec4 fragPosLightSpace, int shadow_res, int shadow_map_idx)
 {
 	// Reference https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
@@ -145,7 +177,16 @@ vec3 calculateSphereLightDiffuse(SphereLight l, vec3 N, vec3 R, vec4 fragPos) {
     radiance *= limit_factor;
 
 	float NdotL = clamp(dot(N, L), 0.0, 1.0);  
-	return radiance * NdotL; 
+	vec3 total_radiance = radiance * NdotL; 
+
+	int shadow_res = int(l.shadow[0]);
+	int shadow_map_idx = int(l.shadow[1]);
+	float shadow = 0.0f;
+	if(shadow_res != 0) {
+		vec3 fragToLight = vec3(fragPos - l.pos);
+		shadow = calculateShadowCube(fragToLight, shadow_res, shadow_map_idx, limit);
+	}
+	return total_radiance * (1.0-shadow);
 }
 
 vec3 calculateSpotLightDiffuse(SpotLight l, vec3 N, vec3 R, vec4 fragPos) {
@@ -238,4 +279,7 @@ void main() {
 
 	// tone mapping
 	outColor = vec4(toneMapping(color), 1.0);
+	
+	/*vec3 fragToLight = vec3(inData.fragPos - uboLight.sphereLights[1].pos);
+	outColor = vec4(texture(samplerCube(shadowCubeMaps[1], shadowCubemapSampler), normalize(fragToLight)).xyz, 1.0);*/
 }

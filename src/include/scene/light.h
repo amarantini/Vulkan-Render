@@ -12,6 +12,7 @@ struct SphereLight { //sphere
     vec4 pos; //world space
     vec4 color; //tint * power
     vec4 others; //radius, limit, *, *
+    vec4 shadow = vec4(0,0,0,0); //shadow_res, shadow map index, 0, 0
     // float radius;
     // float limit = -1;//no limit
 };

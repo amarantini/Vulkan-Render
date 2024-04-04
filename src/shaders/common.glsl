@@ -47,9 +47,8 @@ struct SphereLight { //sphere
     // has location
     vec4 pos; //world space
     vec4 color; //tint * power
-    vec4 others;
-    //float radius;
-    //float limit;//no limit
+    vec4 others;//radius, limit, *, *
+    vec4 shadow;
 };
 
 struct SpotLight { //spot
@@ -61,10 +60,6 @@ struct SpotLight { //spot
     vec4 color; //tint * power
     vec4 others;
     vec4 shadow;
-    //float radius;
-    //float outter;//fov/2
-    //float inner;//fov*(1-blend)/2
-    //float limit; //no limit
 };
 
 struct DirectionalLight { //sun 
