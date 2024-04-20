@@ -48,6 +48,9 @@ std::optional<std::vector<double>> const JsonValue::as_array() const{
 
 void JsonParser::load(const std::string& file_path, std::string& output){
     std::ifstream file(file_path);
+    if(file.fail()){
+        throw std::runtime_error("failed to open file "+file_path);
+    }
     std::stringstream buffer;
     buffer << file.rdbuf();
 

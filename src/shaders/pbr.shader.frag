@@ -2,99 +2,38 @@
 
 #include "common.glsl"
 
-layout (binding = 1) uniform sampler2D normalMap;
-layout (binding = 2) uniform sampler2D displacementMap;
-layout (binding = 3) uniform samplerCube irradianceMap;
-layout (binding = 4) uniform samplerCube prefilteredMap;
-layout (binding = 5) uniform sampler2D brdfLUT;
-layout (binding = 6) uniform sampler2D albedoMap;
-layout (binding = 7) uniform sampler2D metalnessMap;
-layout (binding = 8) uniform sampler2D roughnessMap;
-layout (std140, binding = 9) uniform UniformBufferObjectLight {
+layout (std140, set = 0, binding = 1) uniform UniformBufferObjectLight {
 	int spotLightCount;
     int sphereLightCount;
     int directionalLightCount;
+	int padding;
 	SphereLight sphereLights[MAX_LIGHT_COUNT];
 	SpotLight spotLights[MAX_LIGHT_COUNT];
     DirectionalLight directionalLights[MAX_LIGHT_COUNT];
 } uboLight;
-layout(binding = 10) uniform sampler shadowMapSampler;
-layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT];
-layout(binding = 12) uniform sampler shadowCubemapSampler;
-layout(binding = 13) uniform textureCube shadowCubeMaps[MAX_LIGHT_COUNT]; //Shadow map for sphere light
+layout(set = 0, binding = 2) uniform sampler shadowMapSampler;
+layout(set = 0, binding = 3) uniform texture2D shadowMaps[MAX_LIGHT_COUNT]; //Shadow map for spot light
+layout(set = 0, binding = 4) uniform sampler shadowCubemapSampler;
+layout(set = 0, binding = 5) uniform textureCube shadowCubeMaps[MAX_LIGHT_COUNT]; //Shadow map for sphere light
+layout (set = 0, binding = 6) uniform sampler2D positionMap;
+layout (set = 0, binding = 7) uniform sampler2D normalMap;
+layout (set = 0, binding = 8) uniform sampler2D albedoMap;
+layout (set = 0, binding = 9) uniform sampler2D roughnessMap;
+layout (set = 0, binding = 10) uniform sampler2D metalnessMap;
 
-layout(location = 0) in struct data {
+layout (set = 0, binding = 11) uniform samplerCube irradianceMap;
+layout (set = 0, binding = 12) uniform samplerCube prefilteredMap;
+layout (set = 0, binding = 13) uniform sampler2D brdfLUT;
+layout (set = 0, binding = 14) uniform sampler2D ssaoBlurMap;
+
+layout (location = 0) in struct data {
+    vec2 uv;
     mat3 light;
-    vec3 N; // normal in world space
-    vec4 T; // tangent in world space
-    vec3 V; // incident ray direction from camera in world space 
-    vec2 texCoord;
-    vec4 fragPos; // vertex position in world space
+    vec4 eye;
 } inData;
 
 layout(location = 0) out vec4 outColor;
 
-mat3 computeTBN() {
-	vec3 N = normalize(inData.N);
-	vec3 T = normalize(inData.T.xyz);
-	T = normalize(T - dot(T, N) * N);
-	vec3 B = normalize(cross(N, T) * inData.T.w);
-	mat3 TBN = mat3(T, B, N);
-	return TBN;
-}
-
-vec3 computeNormal(mat3 TBN, vec2 texCoords) {
-	// obtain normal from normal map in range [0,1]
-	// transform normal vector to range [-1,1]
-	vec3 sampledNormal = 2.0 * texture(normalMap, texCoords).rgb - 1.0;
-	
-	return normalize(TBN * sampledNormal);
-}
-
-const float height_scale = 0.1;
-
-vec2 ParallaxMapping(vec3 viewDir)
-{ 
-	// parallax occlusion mapping (referenced from learnopengl)
-	// taking less samples when looking straight at a surface and more samples when looking at an angle
-   	const float minLayers = 8.0;
-	const float maxLayers = 32.0;
-	float numLayers = mix(maxLayers, minLayers, max(dot(vec3(0.0, 0.0, 1.0), viewDir), 0.0)); 
-    // calculate the size of each layer
-    float layerDepth = 1.0 / numLayers;
-    // depth of current layer
-    float currentLayerDepth = 0.0;
-    // the amount to shift the texture coordinates per layer (from vector P)
-    vec2 P = viewDir.xy * height_scale; 
-    vec2 deltaTexCoords = P / numLayers;
-
-	vec2 currentTexCoords = inData.texCoord;
-	float currentDepthMapValue = texture(displacementMap, currentTexCoords).r;
-	
-	while(currentLayerDepth < currentDepthMapValue)
-	{
-		// shift texture coordinates along direction of P
-		currentTexCoords -= deltaTexCoords;
-		// get displacement value at current texture coordinates
-		currentDepthMapValue = texture(displacementMap, currentTexCoords).r;  
-		// get depth of next layer
-		currentLayerDepth += layerDepth;  
-	}
-
-	// interpolate between previous and current depth layer's coordinates
-	// get texture coordinates before collision (reverse operations)
-	vec2 prevTexCoords = currentTexCoords + deltaTexCoords;
-
-	// get depth after and before collision for linear interpolation
-	float afterDepth  = currentDepthMapValue - currentLayerDepth;
-	float beforeDepth = texture(displacementMap, prevTexCoords).r - currentLayerDepth + layerDepth;
-	
-	// interpolation of texture coordinates
-	float weight = afterDepth / (afterDepth - beforeDepth);
-	vec2 finalTexCoords = prevTexCoords * weight + currentTexCoords * (1.0 - weight);
-
-	return finalTexCoords;     
-} 
 
 vec3 prefilteredReflection(vec3 R, float roughness) {
 	const float MAX_REFLECTION_LOD = 4.0; // lod = 0,1,2,3,4
@@ -439,43 +378,41 @@ vec3 calculateDirLight(DirectionalLight l, vec3 F0, float metallness, float roug
 	return kD * diffuse + specular; 
 }
 
-vec3 calculateLights(vec3 F0, float metallness, float roughness, vec3 N, vec3 V, vec3 R) {
+vec3 calculateLights(vec3 F0, float metallness, float roughness, vec3 N, vec3 V, vec3 R, vec4 fragPos) {
 	vec3 Lo = vec3(0.0);
 	for(int i=0; i<uboLight.sphereLightCount; i++) {
-		Lo += calculateSphereLight(uboLight.sphereLights[i], F0, metallness, roughness, N, V, R, inData.fragPos);
+		Lo += calculateSphereLight(uboLight.sphereLights[i], F0, metallness, roughness, N, V, R, fragPos);
 	}
 	for(int i=0; i<uboLight.spotLightCount; i++) {
-		Lo += calculateSpotLight(uboLight.spotLights[i], F0, metallness, roughness, N, V, R, inData.fragPos);
+		Lo += calculateSpotLight(uboLight.spotLights[i], F0, metallness, roughness, N, V, R, fragPos);
 	}
 	for(int i=0; i<uboLight.directionalLightCount; i++) {
-		Lo += calculateDirLight(uboLight.directionalLights[i], F0, metallness, roughness, N, V, R, inData.fragPos);
+		Lo += calculateDirLight(uboLight.directionalLights[i], F0, metallness, roughness, N, V, R, fragPos);
 	}
 	return Lo;
 }
 
 
 void main() {
-	mat3 TBN = computeTBN();
-
-	// Displacement mapping
-	vec2 texCoords = ParallaxMapping(transpose(TBN) * inData.V);
-	if(texCoords.x > 1.0 || texCoords.y > 1.0 || texCoords.x < 0.0 || texCoords.y < 0.0) {
-		discard;
+	vec4 fragPos = texture(positionMap, inData.uv);
+	if(fragPos == vec4(0,0,0,1)) {
+		outColor = vec4(0,0,0,1);
+		return;
 	}
 
-	// Normal mapping
-	vec3 V = normalize(inData.V);
-	vec3 N = computeNormal(TBN, texCoords);
+	vec3 N = texture(normalMap, inData.uv).rgb;
+	vec3 albedo = texture(albedoMap, inData.uv).rgb;
+	float metallness = texture(metalnessMap, inData.uv).r;
+	float roughness = texture(roughnessMap, inData.uv).r;
+
+	vec3 V = normalize(inData.eye.xyz - fragPos.xyz);
 	vec3 R = normalize(reflect(-V, N)); 
 
 	// compute radiance from rgbe
 	vec3 irrad = toRadiance(texture(irradianceMap, normalize(inData.light * N)));
 
 	float NdotV = min(max(dot(N, V), 0.0),1.0);
-	
-	float metallness = texture(metalnessMap, texCoords).r;
-	float roughness = texture(roughnessMap, texCoords).r;
-	vec3 albedo = texture(albedoMap, texCoords).rgb;
+
 	vec2 brdf = texture(brdfLUT, vec2(NdotV,roughness)).rg;
 	vec3 prefilteredColor = prefilteredReflection(normalize(inData.light * R), roughness);
 
@@ -496,13 +433,20 @@ void main() {
 	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
 	
 	// Ambient
-	vec3 ambient = kD * diffuse + specular; 
-	vec3 color = ambient;
+	float ambientOcclusion = texture(ssaoBlurMap, inData.uv).r;
+	//vec3 ambient = diffuse * 0.3 * ambientOcclusion; 
+
+	//vec3 color = ambient + kD * diffuse + specular;
+	vec3 color = kD * diffuse + specular;
+	color *= 0.3;
+
+	color *= ambientOcclusion;
 
 	// From light sources
-	vec3 Lo = calculateLights(F0, metallness, roughness, N, V, R) * albedo;
+	vec3 Lo = calculateLights(F0, metallness, roughness, N, V, R, fragPos) * albedo;
 	color += Lo;
 
 	// tone mapping
 	outColor = vec4(toneMapping(color), 1.0);
+	//outColor = vec4(vec3(ambientOcclusion), 1);
 }

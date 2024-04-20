@@ -11,6 +11,8 @@
 #include "vec.h"
 #include "qua.h"
 
+float lerp(const float start, const float end, float t /* a fraction of 1*/);
+
 /* ----------------- Vec -----------------*/
 // Return the cross product of 2 vec3
 vec3 cross(const vec3 l, const vec3 r);

@@ -70,6 +70,11 @@ struct UniformBufferObjectScene {
     alignas(16) vec4 eye; // camera position
 };
 
+struct PushConstantModel {
+    alignas(16) mat4 model;
+    alignas(16) mat4 invModel;
+};
+
 struct UniformBufferObjectShadow {
     alignas(4) float zNear;
     alignas(4) float zFar;
@@ -106,9 +111,10 @@ struct UniformBufferObjectSphereLight {
     alignas(16) mat4 lightVPs[MAX_LIGHT_COUNT*6];
 };
 
-struct ModelPushConstant {
-    alignas(16) mat4 model;
-    alignas(16) mat4 invModel;
+struct UniformBufferObjectSSAO {
+    alignas(16) vec4 samples[SSAO_SAMPLE_SIZE];
 };
+
+
 
 /* vertex_hpp */

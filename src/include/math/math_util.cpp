@@ -5,6 +5,10 @@
 #include <iostream>
 #include "math_util.h"
 
+float lerp(const float start, const float end, float t /* a fraction of 1*/){
+    return start + (end - start) * t;
+}
+
 /* ----------------- Vec -----------------*/
 
 vec3 cross(vec3 l, vec3 r) {

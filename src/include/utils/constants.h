@@ -67,6 +67,18 @@ const std::string SHADOW_CUBE_FSHADER = SHADER_PATH+"depth.cube.frag.spv";
 
 const std::string DEBUG_SHADOW_CUBE_FSHADER = SHADER_PATH+"shadow.debug.cube.frag.spv";
 
+const std::string DEFERRED_VSHADER = SHADER_PATH+"deferred.vert.spv";
+const std::string DEFERRED_FSHADER = SHADER_PATH+"deferred.frag.spv";
+
+const std::string GBUFFER_VSHADER = SHADER_PATH+"gbuffer.vert.spv";
+const std::string GBUFFER_FSHADER = SHADER_PATH+"gbuffer.frag.spv";
+
+const std::string SSAO_VSHADER = SHADER_PATH+"ssao.vert.spv";
+const std::string SSAO_FSHADER = SHADER_PATH+"ssao.frag.spv";
+
+const std::string SSAO_BLUR_VSHADER = SHADER_PATH+"ssao.blur.vert.spv";
+const std::string SSAO_BLUR_FSHADER = SHADER_PATH+"ssao.blur.frag.spv";
+
 const int MAX_DESCRIPTOR_COUNT = 6; //maximum number of texture sampler descriptor
 
 // Cube arguments
@@ -94,3 +106,6 @@ const float DEPTH_BIAS_SLOPE = 1.75f;
 const bool DISPLAY_SHADOW_MAP_SPHERE = false;
 const bool DISPLAY_SHADOW_MAP_SPOT = false;
 const int DISPLAY_SHADOW_MAP_IDX = 1;
+
+//SSAO
+const int SSAO_SAMPLE_SIZE = 64;

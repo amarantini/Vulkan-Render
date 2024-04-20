@@ -2,7 +2,7 @@
 
 #version 450
 
-layout (binding = 1) uniform sampler2D shadowMapSampler;
+layout (set = 0, binding = 6) uniform sampler2D shadowMapSampler;
 
 layout(location = 0) in struct data {
   float zNear;

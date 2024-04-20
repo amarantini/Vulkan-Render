@@ -50,6 +50,9 @@ struct Mesh {
 
     void loadMeshSimple(){
         std::ifstream infile(SCENE_PATH+pos_info.src, std::ifstream::binary);
+        if(infile.fail()){
+            throw std::runtime_error("failed to open file "+SCENE_PATH+pos_info.src);
+        }
 
         infile.seekg(0, infile.end);
         const size_t num_elements = infile.tellg() / pos_info.stride;

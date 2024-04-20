@@ -1,5 +1,6 @@
 #define M_PI 3.1415926535897932384626433832795
 #define MAX_LIGHT_COUNT 10
+#define HEIGHT_SCALE 0.1
 
 /* ---------------------- Tone mapping ---------------------- */
 vec3 uncharted2TonemapHelper(vec3 x)

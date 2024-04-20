@@ -34,6 +34,7 @@
 #include <limits> // Necessary for std::numeric_limits
 #include <algorithm> // Necessary for std::clamp
 #include <string>
+#include <random>
 
 #include "vertex.hpp"
 #include "scene.h"
@@ -111,8 +112,8 @@ private:
     std::shared_ptr<EventsController> event_controller;
 
     std::string physical_device_name = "None";
-    int width = WIDTH;
-    int height = HEIGHT;
+    static inline int width = WIDTH;
+    static inline int height = HEIGHT;
     bool headless = false;
     std::string culling = CULLING_NONE;
     // For performance measuring
@@ -144,7 +145,12 @@ private:
     std::vector<VkImageView> swapChainImageViews;
     
     VkRenderPass renderPass;
-    VkDescriptorSetLayout descriptorSetLayout;
+    // UniformBufferObjectScene, UniformBufferObjectLight, GBuffer contens
+    VkDescriptorSetLayout descriptorSetLayoutScene; 
+    // Per object/material
+    VkDescriptorSetLayout descriptorSetLayoutMaterial;
+    std::vector<VkDescriptorSet> descriptorSetsScene;
+    
     VkPipelineLayout pipelineLayout;
 
     VkPipelineCache pipelineCache;
@@ -159,6 +165,9 @@ private:
         VkPipeline debug = VK_NULL_HANDLE;
         VkPipeline shadowCube = VK_NULL_HANDLE;
         VkPipeline debugCube = VK_NULL_HANDLE;
+        VkPipeline gbuffer = VK_NULL_HANDLE;
+        VkPipeline ssao = VK_NULL_HANDLE;
+        VkPipeline ssaoBlur = VK_NULL_HANDLE;
 
         Pipelines() {
             simple = VK_NULL_HANDLE;
@@ -170,6 +179,9 @@ private:
             debug = VK_NULL_HANDLE;
             shadowCube = VK_NULL_HANDLE;
             debugCube = VK_NULL_HANDLE;
+            gbuffer = VK_NULL_HANDLE;
+            ssao = VK_NULL_HANDLE;
+            ssaoBlur = VK_NULL_HANDLE;
         }
 
         void destroy() {
@@ -182,6 +194,9 @@ private:
             vkDestroyPipeline(device, debug, nullptr);
             vkDestroyPipeline(device, shadowCube, nullptr);
             vkDestroyPipeline(device, debugCube, nullptr);
+            vkDestroyPipeline(device, gbuffer, nullptr);
+            vkDestroyPipeline(device, ssao, nullptr);
+            vkDestroyPipeline(device, ssaoBlur, nullptr);
         }
     };
     
@@ -212,17 +227,9 @@ private:
     };
 
     std::vector<vkBuffer> uniformBuffers;
-    
-    // std::vector<VkBuffer> uniformBuffers;
-    // std::vector<VkDeviceMemory> uniformBuffersMemory;
-    // std::vector<void*> uniformBuffersMapped;
-    static inline VkDescriptorPool descriptorPool = NULL;
-
     std::vector<vkBuffer> lightUniformBuffers;
-
-    // VkBuffer lightUniformBuffer;
-    // VkDeviceMemory lightUniformBufferMemory;
-    // void* lightUniformBufferMapped;
+    
+    static inline VkDescriptorPool descriptorPool = NULL;
     
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
@@ -354,7 +361,18 @@ private:
             endSingleTimeCommands(commandBuffer);
         }
 
-        void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory, int arrayLayers = 1, VkImageCreateFlags flags = 0, int mipLevels = 1) {
+        void createImage(
+            uint32_t width, 
+            uint32_t height, 
+            VkFormat format, 
+            VkImageTiling tiling, 
+            VkImageUsageFlags usage, 
+            VkMemoryPropertyFlags properties, 
+            VkImage& image, 
+            VkDeviceMemory& imageMemory, 
+            int arrayLayers = 1, 
+            VkImageCreateFlags flags = 0, 
+            int mipLevels = 1) {
             VkImageCreateInfo imageInfo{};
             imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
             imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -390,7 +408,16 @@ private:
             vkBindImageMemory(device, image, imageMemory, 0);
         }
 
-        VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, int layerCount = 1, int levelCount = 1, VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D, int baseArrayLayer = 0, VkComponentMapping components = {VK_COMPONENT_SWIZZLE_IDENTITY}) {
+        VkImageView createImageView(
+            VkImageView& imageView, 
+            VkImage image, 
+            VkFormat format, 
+            VkImageAspectFlags aspectFlags, 
+            int layerCount = 1, 
+            int levelCount = 1, 
+            VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D, 
+            int baseArrayLayer = 0, 
+            VkComponentMapping components = {VK_COMPONENT_SWIZZLE_IDENTITY}) {
             VkImageViewCreateInfo viewInfo{};
             viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
             viewInfo.image = image;
@@ -403,7 +430,6 @@ private:
             viewInfo.subresourceRange.layerCount = layerCount;
             viewInfo.components = components;
 
-            VkImageView imageView;
             if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create image view!");
             }
@@ -441,10 +467,6 @@ private:
 
         TextureInfo loadFromFile(const char* texture_file_path, int desired_channels);
 
-        // void free() {
-        //     vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
-        // }
-
         void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, int layerCount = 1, int mipLevel = 0) {
             VkCommandBuffer commandBuffer = vkHelper.beginSingleTimeCommands();
             
@@ -477,19 +499,18 @@ private:
         }
 
         
-        void createTextureImage(TextureInfo info, VkFormat format);
+        void createTextureImage(TextureInfo info, VkFormat format, int pixelSize = 1);
 
         void createTextureImageView(VkFormat format) {
-            textureImageView = vkHelper.createImageView(textureImage, format, VK_IMAGE_ASPECT_COLOR_BIT);
+            vkHelper.createImageView(textureImageView, textureImage, format, VK_IMAGE_ASPECT_COLOR_BIT);
         }
 
-        void createTextureSampler(bool isRgbe = false, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT, VkCompareOp compareOp = VK_COMPARE_OP_ALWAYS, int mipLevels = 1, VkBorderColor borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK) {
-            VkFilter filter = VK_FILTER_LINEAR; 
-            VkSamplerMipmapMode samplerMipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; 
-            if(isRgbe) {
-                filter = VK_FILTER_NEAREST;
-                samplerMipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-            }
+        void createTextureSampler(
+            VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT, VkCompareOp compareOp = VK_COMPARE_OP_ALWAYS, 
+            int mipLevels = 1, 
+            VkBorderColor borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            VkFilter filter = VK_FILTER_LINEAR,
+            VkSamplerMipmapMode samplerMipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR, float max_lod = 1.0f) { 
 
             VkSamplerCreateInfo samplerInfo{};
             samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -511,7 +532,7 @@ private:
             samplerInfo.mipmapMode = samplerMipmapMode;
             samplerInfo.mipLodBias = 0.0f;
             samplerInfo.minLod = 0.0f;
-            samplerInfo.maxLod = 4.0f;
+            samplerInfo.maxLod = max_lod;
             
             if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
                     throw std::runtime_error("failed to create texture sampler!");
@@ -550,7 +571,7 @@ private:
             
             createTextureImage(info, format);//TODO
             createTextureImageView(format);
-            createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
+            createTextureSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
             updateDescriptorImageInfo();
         }
 
@@ -576,7 +597,7 @@ private:
             std::memcpy(info.pixels, &data, sizeof(data));
             createTextureImage(info,format);//TODO
             createTextureImageView(format);
-            createTextureSampler(false, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
+            createTextureSampler(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
             updateDescriptorImageInfo();
         }
     };
@@ -592,7 +613,7 @@ private:
         void convertToRadianceValue(TextureInfo& info);
 
         void createCubeTextureImageView(VkFormat format, int mipLevel = 1) {
-            textureImageView = vkHelper.createImageView(textureImage, format, VK_IMAGE_ASPECT_COLOR_BIT, 6, mipLevel, VK_IMAGE_VIEW_TYPE_CUBE);
+            vkHelper.createImageView(textureImageView, textureImage, format, VK_IMAGE_ASPECT_COLOR_BIT, 6, mipLevel, VK_IMAGE_VIEW_TYPE_CUBE);
         }
     };
 
@@ -634,6 +655,11 @@ private:
                     // default to (1,1,1)
                     albedo->load(vec3(1,1,1), VK_FORMAT_R8G8B8A8_UNORM);
                 } 
+                // load default roughness, metalness map
+                roughness = std::make_shared<VkTexture2D>();
+                roughness->load(1.0, VK_FORMAT_R8G8B8A8_UNORM);
+                metalness = std::make_shared<VkTexture2D>();
+                metalness->load(0.0, VK_FORMAT_R8G8B8A8_UNORM);
             } 
 
             if(type == Material::Type::PBR){
@@ -697,7 +723,7 @@ private:
 
     /* ------------------- Model loading & rendering ------------------- */
     struct VkModel {
-        ModelPushConstant pc = {}; //model
+        PushConstantModel pc = {}; //model
         std::shared_ptr<Transform> transform;
         std::shared_ptr<Mesh> mesh;
         VkBuffer vertexBuffer;
@@ -735,9 +761,9 @@ private:
         }
 
         void render(VkCommandBuffer& commandBuffer, VkPipelineLayout& pipelineLayout){
-            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ModelPushConstant), &pc);
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantModel), &pc);
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);//?
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &descriptorSets[currentFrame], 0, nullptr);//?
 
             VkBuffer vertexBuffers[] = {vertexBuffer};
             VkDeviceSize offsets[] = {0};
@@ -901,6 +927,43 @@ private:
             
         }
 
+        void renderForGBuffer(VkCommandBuffer& commandBuffer, VkPipelineLayout& pipelineLayout, const std::string culling=CULLING_NONE, mat4 VP=mat4::I){
+            auto renderHelper = [&commandBuffer, &pipelineLayout, &VP, &culling](std::vector<std::shared_ptr<VkModel>>& models, VkPipeline& pipeline){
+                if(models.empty()) {
+                    return;
+                }
+                if(culling == CULLING_NONE) {
+                    for(auto model: models){
+                        model->updateModel();
+                        model->render(commandBuffer, pipelineLayout);
+                    }
+                } else {
+                    for(auto model: models){
+                        model->updateModel();
+                        mat4 MVP = VP * model->pc.model;
+                        if(frustum_cull_test(MVP, model->mesh->bbox)){
+                            model->render(commandBuffer, pipelineLayout);
+                        }
+                    }
+                }
+            };
+            renderHelper(pbr_models, pipelines.pbr);
+            renderHelper(lamber_models, pipelines.lamber);
+        }
+
+        void renderForDeferred(VkCommandBuffer& commandBuffer){
+            auto renderHelper = [&commandBuffer](std::vector<std::shared_ptr<VkModel>>& models, VkPipeline& pipeline){
+                if(models.empty()) {
+                    return;
+                }
+                vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+                
+            };
+            renderHelper(pbr_models, pipelines.pbr);
+            renderHelper(lamber_models, pipelines.lamber);
+        }
+
         std::vector<std::shared_ptr<VkModel>> getAllModels(){
             std::vector<std::shared_ptr<VkModel>> models;
             models.insert(models.end(), simple_models.begin(), simple_models.end());
@@ -940,6 +1003,8 @@ private:
 
     } model_list;
 
+    /* ------------------- Shadow map ------------------- */
+
     struct ShadowMapPass {
         VkTexture2D shadowMapTexture;
 		VkFramebuffer frameBuffer;
@@ -962,10 +1027,10 @@ private:
         std::shared_ptr<Transform> transform;
         vec3 lightPos;
 
-        const VkFormat depthFormat{ VK_FORMAT_D16_UNORM };
+        VkFormat depthFormat{ VK_FORMAT_D16_UNORM };
         const VkFormat imageFormat{ VK_FORMAT_R32_SFLOAT };
 
-        void initDefault(float fov, int shadow_res_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass) {
+        void initDefault(float fov, int shadow_res_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass, VkFormat depthFormat_) {
             vfov = fov;
             shadow_res = shadow_res_;
             transform = transform_;
@@ -975,6 +1040,7 @@ private:
             uboShadow.zNear = SHADOW_ZNEAR;
             uboShadow.zFar = SHADOW_ZFAR;
             pcShadow = {};
+            depthFormat = depthFormat_;
 
             create2DTexture();
             createOffscreenFramebuffer(renderPass);
@@ -991,7 +1057,7 @@ private:
             updateDescriptorImageInfo(shadowMapTexture);
         }
 
-        void init2D(float fov, int shadow_res_, float radius_, float limit_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass) {
+        void init2D(float fov, int shadow_res_, float radius_, float limit_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass, VkFormat depthFormat_) {
             vfov = fov;
             shadow_res = shadow_res_;
             radius = radius_;
@@ -1004,6 +1070,7 @@ private:
             uboShadow.zFar = limit;
             uboShadow.view = transform->worldToLocal();
             pcShadow = {};
+            depthFormat = depthFormat_;
             
             create2DTexture();
             createOffscreenFramebuffer(renderPass);
@@ -1032,9 +1099,9 @@ private:
         void create2DTexture() {
             vkHelper.createImage(shadow_res, shadow_res, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowMapTexture.textureImage, shadowMapTexture.textureImageMemory);
 
-            shadowMapTexture.textureImageView = vkHelper.createImageView(shadowMapTexture.textureImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+            vkHelper.createImageView(shadowMapTexture.textureImageView, shadowMapTexture.textureImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 
-            shadowMapTexture.createTextureSampler(false, 
+            shadowMapTexture.createTextureSampler( 
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_ALWAYS, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
         }
 
@@ -1058,12 +1125,13 @@ private:
 
         // ========= For Cube Shadow Map ===========
 
-        void initCube(UniformBufferObjectSphereLight* uboSphere_, int shadow_res_, float radius_, float limit_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass) {
+        void initCube(UniformBufferObjectSphereLight* uboSphere_, int shadow_res_, float radius_, float limit_, std::shared_ptr<Transform> transform_, VkRenderPass& renderPass, VkFormat depthFormat_) {
             shadow_res = shadow_res_;
             radius = radius_;
             limit = limit_;
             transform = transform_;
             uboSphere = uboSphere_;
+            depthFormat = depthFormat_;
 
             uboShadow = {};
             uboShadow.proj = perspective(M_PI / 2.0f, 1.0f, radius, limit);
@@ -1124,14 +1192,14 @@ private:
             6,
             VK_IMAGE_ASPECT_COLOR_BIT);
 
-            shadowMapTexture.createTextureSampler(false, 
+            shadowMapTexture.createTextureSampler( 
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE);
 
-            shadowMapTexture.textureImageView = vkHelper.createImageView(shadowMapTexture.textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 6, 1, VK_IMAGE_VIEW_TYPE_CUBE, 0, {VK_COMPONENT_SWIZZLE_R});
+            vkHelper.createImageView(shadowMapTexture.textureImageView,shadowMapTexture.textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 6, 1, VK_IMAGE_VIEW_TYPE_CUBE, 0, {VK_COMPONENT_SWIZZLE_R});
 
             // Create image views for 6 faces of the cube map
             for(int i=0; i<6; i++) {
-                faceImageViews[i] = vkHelper.createImageView(shadowMapTexture.textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, VK_IMAGE_VIEW_TYPE_2D, i, {VK_COMPONENT_SWIZZLE_R});
+                vkHelper.createImageView(faceImageViews[i], shadowMapTexture.textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, VK_IMAGE_VIEW_TYPE_2D, i, {VK_COMPONENT_SWIZZLE_R});
             }
 
             // Create offscreen image for framebuffer
@@ -1148,7 +1216,7 @@ private:
             1,
             VK_IMAGE_ASPECT_DEPTH_BIT);
 
-            offscreenImageTexture.textureImageView = vkHelper.createImageView(offscreenImageTexture.textureImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+            vkHelper.createImageView( offscreenImageTexture.textureImageView, offscreenImageTexture.textureImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
         }
 
         void updateSphereShadowData() {
@@ -1186,7 +1254,6 @@ private:
     };
 
     struct ShadowMapPassList {
-        const VkFormat depthFormat{ VK_FORMAT_D16_UNORM };
         const VkFormat imageFormat{ VK_FORMAT_R32_SFLOAT };
         // Spot
         VkRenderPass renderPassSpot;
@@ -1210,7 +1277,7 @@ private:
         // Debug Sphere
         VkDescriptorSet debugCubeDescriptorSet{ VK_NULL_HANDLE };
 
-        void createSpotRenderPass()
+        void createSpotRenderPass(VkFormat depthFormat)
         {
             // Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmapping/shadowmapping.cpp
             VkAttachmentDescription attachmentDescription{};
@@ -1263,7 +1330,7 @@ private:
             VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &renderPassSpot), "failed to create render pass");
         }
 
-        void createSphereRenderPass()
+        void createSphereRenderPass(VkFormat depthFormat)
         {
             // Reference https://github.com/SaschaWillems/Vulkan/blob/master/examples/shadowmappingomni/shadowmappingomni.cpp
             VkAttachmentDescription attachmentDescriptions[2] = {};
@@ -1368,141 +1435,195 @@ private:
 
     ShadowMapPassList shadowMapPassList;
 
-    void createShadowMapSphereDescriptorSet() {
-        // for sphere shadow map rendering pipeline
-        allocateSingleDescriptorSet(shadowMapPassList.sphereDescriptorSet);
+    void createShadowMapSphereDescriptorSet();
 
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = shadowMapPassList.sphereUniformBuffer.buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObjectShadow);
-        
-        std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-            writeDescriptorSet(shadowMapPassList.sphereDescriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/0, &bufferInfo, 1)};
+    void createShadowMapDebugDescriptorSet();
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-   
-    }
+    void createShadowMapDebugCubeDescriptorSet();
 
-    void createShadowMapDebugDescriptorSet() {
-        // for shadow map debug pipeline
-        allocateSingleDescriptorSet(shadowMapPassList.debugDescriptorSet);
+    void createShadowMapPasses();
 
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = shadowMapPassList.shadowUniformBuffer.buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObjectShadow);
+    void createShadowMapPassesSphere();
 
-        VkDescriptorImageInfo samplerInfo = {};
-        samplerInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        
-        if(shadowMapPassList.shadowMapPassesSpot.empty()) {
-            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.textureSampler;
-            samplerInfo.imageView = shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.textureImageView;
-        } else {
-            auto& shadowMapPass = shadowMapPassList.shadowMapPassesSpot[DISPLAY_SHADOW_MAP_IDX];
-            samplerInfo.sampler = shadowMapPass.shadowMapTexture.textureSampler;
-            samplerInfo.imageView = shadowMapPass.shadowMapTexture.textureImageView;
-            shadowMapPassList.copyShadowUniformBuffer(shadowMapPass.uboShadow);
-        }
-        
-        std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-            writeDescriptorSet(shadowMapPassList.debugDescriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/0, &bufferInfo, 1),
-            writeDescriptorSet(shadowMapPassList.debugDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/1, &samplerInfo, 1)};
+    /* ------------------- Deferred shading ------------------- */
 
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-    }
+    struct BasePass {
+        void createAttachment(VkFormat format, VkImageUsageFlagBits usageFlag, VkTexture& attachment, int width, int height) {
+            VkImageAspectFlags aspectMask = 0;
 
-    void createShadowMapDebugCubeDescriptorSet() {
-        // for cube shadow map debug pipeline
-        allocateSingleDescriptorSet(shadowMapPassList.debugCubeDescriptorSet);
-
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = shadowMapPassList.shadowUniformBuffer.buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObjectShadow);
-
-        VkDescriptorImageInfo samplerInfo = {};
-        samplerInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        
-        if(shadowMapPassList.shadowMapPassesSphere.empty()) {
-            samplerInfo.sampler = shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.textureSampler;
-            samplerInfo.imageView = shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.textureImageView;
-        } else {
-            auto& shadowMapPass = shadowMapPassList.shadowMapPassesSphere[DISPLAY_SHADOW_MAP_IDX];
-            samplerInfo.sampler = shadowMapPass.shadowMapTexture.textureSampler;
-            samplerInfo.imageView = shadowMapPass.shadowMapTexture.textureImageView;
-            shadowMapPassList.copyShadowUniformBuffer(shadowMapPass.uboShadow);
-        }
-        
-        std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-            writeDescriptorSet(shadowMapPassList.debugCubeDescriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, /*binding=*/0, &bufferInfo, 1),
-            writeDescriptorSet(shadowMapPassList.debugCubeDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, /*binding=*/1, &samplerInfo, 1)};
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-   
-    }
-
-    void createShadowMapPasses() {
-        int count = 0;
-        for(uint32_t i=0; i<light_info_list.spot_lights.size(); i++) {
-            int shadow_res = light_info_list.spot_light_infos[i]->shadow_res;
-            if(shadow_res>0) {
-                ShadowMapPass shadowMapPass = {};
-                shadowMapPass.light_idx = i;
-                light_info_list.spot_lights[i].shadow[1] = count++;
-                float fov = light_info_list.spot_lights[i].others[2] * 2;
-                float radius = light_info_list.spot_lights[i].others[0];
-                float limit = light_info_list.spot_lights[i].others[1];
-                shadowMapPass.init2D(fov, shadow_res, radius, limit, light_info_list.spot_light_infos[i]->transform, shadowMapPassList.renderPassSpot); 
-                shadowMapPassList.shadowMapPassesSpot.push_back(shadowMapPass);
-                shadowMapPassList.descriptorImageInfosSpot.push_back(shadowMapPass.shadowMapTexture.descriptorImageInfo);
+            if (usageFlag & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+            {
+                aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             }
-        }
-        shadowMapPassList.defaultShadowMapPassSpot.initDefault(degToRad(45), 1, nullptr, shadowMapPassList.renderPassSpot);
-        if(count == 0) {
-            // If no light needs a shadow map, fill the descriptorImageInfosSpot with default info
-            shadowMapPassList.descriptorImageInfosSpot.push_back(shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.descriptorImageInfo);
-        } 
-        if(count < MAX_LIGHT_COUNT) {
-            std::cout<<"Shadow map required for spot lights: "<<count<<"\n";
-            for(;count<MAX_LIGHT_COUNT; count++) {
-                shadowMapPassList.descriptorImageInfosSpot.push_back(shadowMapPassList.defaultShadowMapPassSpot.shadowMapTexture.descriptorImageInfo);
-       
+            if (usageFlag & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+            {
+                aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                if (format >= VK_FORMAT_D16_UNORM_S8_UINT)
+                    aspectMask |=VK_IMAGE_ASPECT_STENCIL_BIT;
             }
+
+            vkHelper.createImage(width, height, format, VK_IMAGE_TILING_OPTIMAL, usageFlag | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.textureImage, attachment.textureImageMemory);
+
+            vkHelper.createImageView(attachment.textureImageView, attachment.textureImage, format, aspectMask);
+
+            attachment.createTextureSampler( 
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR);
+
+            attachment.updateDescriptorImageInfo();
+        }
+    };
+
+    struct GBufferPass: BasePass {
+        VkFramebuffer frameBuffer;
+        VkTexture positionAttachment;
+        VkTexture normalAttachment;
+        VkTexture albedoAttachment;
+        VkTexture metalnessAttachment;
+        VkTexture roughnessAttachment;
+        VkTexture depthAttachment;
+        VkRenderPass renderPass;
+        VkFormat depthFormat;
+        std::vector<VkDescriptorSet> descriptorSets;
+
+        void createRenderPass(VkFormat depthFormat_);
+
+        void createFrameBuffer();
+
+        void createAttachments();
+
+        void destroy(){
+            vkDestroyFramebuffer(device, frameBuffer, nullptr);
+            positionAttachment.destroy();
+            normalAttachment.destroy();
+            albedoAttachment.destroy();
+            depthAttachment.destroy();
+            metalnessAttachment.destroy();
+            roughnessAttachment.destroy();
+            vkDestroyRenderPass(device, renderPass, nullptr);
+        }
+
+        void recreateAttachments();
+    };
+
+    GBufferPass gBufferPass;
+    
+    void resizeGBufferAttachment();//on window size change
+
+    /* -------------------- SSAO --------------------- */
+
+    struct SSAOBasePass: BasePass {
+        VkFramebuffer frameBuffer;
+        
+        VkTexture colorAttachment;
+        std::vector<VkDescriptorSet> descriptorSets;
+
+        SSAOBasePass() = default;
+
+        void destroy(){
+            vkDestroyFramebuffer(device, frameBuffer, nullptr);
+            colorAttachment.destroy();
+        }
+
+        void init(VkRenderPass renderPass);
+
+        void createFrameBuffer(VkRenderPass renderPass);
+
+        void recreateAttachment(VkRenderPass renderPass);
+    };
+
+    struct SSAOPassList {
+        SSAOBasePass ssaoPass = {};
+        SSAOBasePass ssaoBlurPass = {};
+
+        VkTexture2D ssaoNoise;
+        UniformBufferObjectSSAO uboSSAO;
+
+        vkBuffer ssaoUniformBuffer;
+        VkRenderPass renderPass;
+
+        void init() {
+            // Reference https://learnopengl.com/Advanced-Lighting/SSAO
+            // Normal-oriented half-hemisphere
+            std::uniform_real_distribution<float> dist(0.0, 1.0);
+            std::default_random_engine generator;
+            for(int i=0; i<SSAO_SAMPLE_SIZE; i++){
+                vec4 sample(
+                    dist(generator) * 2.0 - 1.0, //-1.0 to 1.0
+                    dist(generator) * 2.0 - 1.0, //-1.0 to 1.0
+                    dist(generator), //0.0 to 1.0
+                    0.0
+                );
+                sample.normalize();
+                sample *= dist(generator);
+                // distribute more kernel samples closer to the origin
+                float scale = (float)i / SSAO_SAMPLE_SIZE; 
+                scale   = lerp(0.1f, 1.0f, scale * scale);
+                sample *= scale;
+                uboSSAO.samples[i] = sample;
+            }
+
+            memcpy(ssaoUniformBuffer.bufferMapped, &uboSSAO, sizeof(uboSSAO));
             
-        }
-    }
+            // Generate noise texture for random kernel rotation 
+            // std::vector<vec4> noises;
+            float noises[16*4];
+            for(int i=0; i<16; i++)
+            {
+                // noises.push_back(vec4(dist(generator) * 2.0 - 1.0, dist(generator) * 2.0 - 1.0, 0.0, 0.0));
+                noises[4*i] = dist(generator) * 2.0 - 1.0;
+                noises[4*i+1] = dist(generator) * 2.0 - 1.0;
+                noises[4*i+2] = 0.0f;
+                noises[4*i+3] = 0.0f;
+            }
 
-    void createShadowMapPassesSphere() {
-        int count = 0;
-        for(uint32_t i=0; i<light_info_list.sphere_lights.size(); i++) {
-            int shadow_res = light_info_list.sphere_light_infos[i]->shadow_res;
-            if(shadow_res>0) {
-                ShadowMapPass shadowMapPass = {};
-                shadowMapPass.light_idx = i;
-                light_info_list.sphere_lights[i].shadow[1] = count++;
-                float radius = light_info_list.sphere_lights[i].others[0];
-                float limit = light_info_list.sphere_lights[i].others[1];
-                shadowMapPass.initCube(&(shadowMapPassList.uboSphere), shadow_res, radius, limit, light_info_list.sphere_light_infos[i]->transform, shadowMapPassList.renderPassSphere); 
-                shadowMapPassList.shadowMapPassesSphere.push_back(shadowMapPass);
-                shadowMapPassList.descriptorImageInfosSphere.push_back(shadowMapPass.shadowMapTexture.descriptorImageInfo);
-            }
-        }
-        shadowMapPassList.defaultShadowMapPassSphere.initCube(nullptr, 1, 1, 10, nullptr, shadowMapPassList.renderPassSphere);
-        if(count == 0) {
-            // If no light needs a shadow map, fill the descriptorImageInfosSpot with default info
-            shadowMapPassList.descriptorImageInfosSphere.push_back(shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.descriptorImageInfo);
-        } 
-        if(count < MAX_LIGHT_COUNT) {
-            std::cout<<"Shadow map required for sphere lights: "<<count<<"\n";
-            for(;count<MAX_LIGHT_COUNT; count++) {
-                shadowMapPassList.descriptorImageInfosSphere.push_back(shadowMapPassList.defaultShadowMapPassSphere.shadowMapTexture.descriptorImageInfo);
-       
-            }
+            TextureInfo info = {
+                4,
+                4,
+                4,
+                static_cast<unsigned char*>(std::malloc(sizeof(noises)))
+            };
+            std::memcpy(info.pixels, &noises, sizeof(noises));
             
+            ssaoNoise.createTextureImage(info, VK_FORMAT_R32G32B32A32_SFLOAT, sizeof(float));//TODO
+            ssaoNoise.createTextureImageView(VK_FORMAT_R32G32B32A32_SFLOAT);
+            ssaoNoise.createTextureSampler( 
+            VK_SAMPLER_ADDRESS_MODE_REPEAT, VK_COMPARE_OP_NEVER, 1, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, VK_FILTER_NEAREST, VK_SAMPLER_MIPMAP_MODE_LINEAR);
+            ssaoNoise.updateDescriptorImageInfo();
         }
-    }
+
+        void destroy() {
+            ssaoNoise.destroy();
+            ssaoPass.destroy();
+            ssaoBlurPass.destroy();
+            ssaoUniformBuffer.destroy();
+            vkDestroyRenderPass(device, renderPass, nullptr);
+        }
+
+        void createRenderPass();
+
+        void recreateAttachments() {
+            ssaoPass.recreateAttachment(renderPass);
+            ssaoBlurPass.recreateAttachment(renderPass);
+        }
+
+        void createUniformBuffer() {
+            VkDeviceSize bufferSize = sizeof(UniformBufferObjectSSAO);
+
+            vkHelper.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, ssaoUniformBuffer.buffer, ssaoUniformBuffer.bufferMemory);
+
+            vkMapMemory(device, ssaoUniformBuffer.bufferMemory, 0, bufferSize, 0, &ssaoUniformBuffer.bufferMapped);
+        }
+    };
+
+    void createSSAOPassList();
+
+    void resizeSSAOPassListAttachment();
+
+    void createSSAOPassDescriptorSet();
+
+    void createSSAOBlurPassDescriptorSet();
+
+    SSAOPassList ssaoPassList;
 
     /* ---------------- Load models ---------------- */
     void createModels();
@@ -1514,8 +1635,6 @@ private:
     void mainLoop();
     
     void cleanUp();
-    
-    
     
     void createInstance();
     
@@ -1626,9 +1745,9 @@ private:
     
     void createDescriptorPool();
 
-    void allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets, int descriptorSetCount = MAX_FRAMES_IN_FLIGHT);
+    void allocateDescriptorSet(std::vector<VkDescriptorSet>& descriptorSets, int descriptorSetCount, VkDescriptorSetLayout descriptorSetLayout);
 
-    void allocateSingleDescriptorSet(VkDescriptorSet& descriptorSets);
+    void allocateSingleDescriptorSet(VkDescriptorSet& descriptorSets, VkDescriptorSetLayout descriptorSetLayout);
     
     void createModelDescriptorSets(std::shared_ptr<VkModel> model);
 
@@ -1637,20 +1756,10 @@ private:
     VkWriteDescriptorSet writeDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType type, uint32_t binding, VkDescriptorBufferInfo* bufferInfo, uint32_t descriptorCount = 1);
 
     VkWriteDescriptorSet writeDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType type, uint32_t binding, VkDescriptorImageInfo* imageInfo, uint32_t descriptorCount = 1);
-    
-    /* ------------------- Texture mapping ------------------- */
-    // void createTextureImage();
-    
-    // void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-    
-    // VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
-    
-    // void createTextureImageView();
-    
-    /* ------------ Texture Sampler ------------ */
-    // void createTextureSampler();
 
     /* ------------------ Defth Buffer ------------------ */
+    VkFormat depthFormat;
+
     void createDepthResources();
     
     VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);

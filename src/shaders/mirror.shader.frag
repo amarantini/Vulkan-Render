@@ -2,9 +2,9 @@
 
 #include "common.glsl"
 
-layout (binding = 1) uniform sampler2D normalMap;
-layout (binding = 2) uniform sampler2D displacementMap;
-layout (binding = 3) uniform samplerCube environmentMap;
+layout (set = 1, binding = 1) uniform sampler2D normalMap;
+layout (set = 1, binding = 2) uniform sampler2D displacementMap;
+layout (set = 1, binding = 3) uniform samplerCube environmentMap;
 
 layout(location = 0) in struct data {
     mat3 light;
@@ -15,8 +15,6 @@ layout(location = 0) in struct data {
 } inData;
 
 layout(location = 0) out vec4 outColor;
-
-const float height_scale = 0.1;
 
 mat3 computeTBN() {
 	vec3 N = normalize(inData.normal);
@@ -47,7 +45,7 @@ vec2 ParallaxMapping(vec3 viewDir)
     // depth of current layer
     float currentLayerDepth = 0.0;
     // the amount to shift the texture coordinates per layer (from vector P)
-    vec2 P = viewDir.xy * height_scale; 
+    vec2 P = viewDir.xy * HEIGHT_SCALE; 
     vec2 deltaTexCoords = P / numLayers;
 
 	vec2 currentTexCoords = inData.texCoord;
