@@ -1,7 +1,7 @@
 #version 450
 
 #define SSAO_SAMPLE_SIZE 64
-#define RADIUS 0.5
+#define RADIUS 5
 #define BIAS 0.025
 
 layout (set = 0, binding = 6) uniform sampler2D positionMap;

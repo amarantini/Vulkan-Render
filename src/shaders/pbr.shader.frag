@@ -431,20 +431,18 @@ void main() {
 
 	// Specular
 	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
-	
-	// Ambient
-	float ambientOcclusion = texture(ssaoBlurMap, inData.uv).r;
-	//vec3 ambient = diffuse * 0.3 * ambientOcclusion; 
 
 	//vec3 color = ambient + kD * diffuse + specular;
 	vec3 color = kD * diffuse + specular;
 	color *= 0.3;
 
-	color *= ambientOcclusion;
-
 	// From light sources
 	vec3 Lo = calculateLights(F0, metallness, roughness, N, V, R, fragPos) * albedo;
 	color += Lo;
+
+	// Ambient
+	float ambientOcclusion = texture(ssaoBlurMap, inData.uv).r;
+	color *= ambientOcclusion;
 
 	// tone mapping
 	outColor = vec4(toneMapping(color), 1.0);

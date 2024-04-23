@@ -20,7 +20,7 @@ layout(binding = 11) uniform texture2D shadowMaps[MAX_LIGHT_COUNT]; //Shadow map
 layout(binding = 12) uniform sampler shadowCubemapSampler;
 layout(binding = 13) uniform textureCube shadowCubeMaps[MAX_LIGHT_COUNT]; //Shadow map for sphere light
 
-layout(location = 0) flat in struct data {
+layout(location = 0) in struct data {
     mat3 light;
     vec3 N; // normal in world space
     vec4 T; // tangent in world space

@@ -50,8 +50,8 @@
 
 
 
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 450;
+const uint32_t WIDTH = 1000;
+const uint32_t HEIGHT = 600;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -1565,11 +1565,9 @@ private:
             memcpy(ssaoUniformBuffer.bufferMapped, &uboSSAO, sizeof(uboSSAO));
             
             // Generate noise texture for random kernel rotation 
-            // std::vector<vec4> noises;
             float noises[16*4];
             for(int i=0; i<16; i++)
             {
-                // noises.push_back(vec4(dist(generator) * 2.0 - 1.0, dist(generator) * 2.0 - 1.0, 0.0, 0.0));
                 noises[4*i] = dist(generator) * 2.0 - 1.0;
                 noises[4*i+1] = dist(generator) * 2.0 - 1.0;
                 noises[4*i+2] = 0.0f;
