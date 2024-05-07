@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15-472-s24: A2 - Materials</title>
+<style>
+/* feel free to style your report in a fancier way! */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;700&Anonymous+Pro&display=swap');
+
+html {
+	background:#505055;
+}
+
+body {
+	font-family: 'Quicksand', sans-serif;
+	color:#000;
+	background:#eeeee8;
+	font-size:15px;
+	margin: 1em auto 50vh auto;
+	padding: 1em 2em 1em 2em;
+	max-width:45em;
+	border-radius:4px;
+	box-shadow:0 0 10px #0008;
+}
+
+h1 { font-size: 20px; font-weight: 700; }
+h2 { font-size: 16px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 400; }
+h4 { font-size: 14px; font-weight: 400; }
+
+h1, h2, h3, h4 {
+	margin: 15px 0 0 -10px;
+}
+
+p {
+	margin: 5px 0 0 0;
+}
+
+.subtitle {
+	display:block;
+	font-size:16px;
+	font-weight:400;
+}
+
+.placeholder {
+	color:#800;
+	font-style:italic;
+}
+
+kbd {
+	display:inline-block;
+	background:#ccc;
+	color:#444;
+	font-style:normal;
+	font-weight:700;
+	border-radius:8px;
+	padding:1px 6px;
+	margin:1px;
+	border:1.5px solid #aaa;
+}
+
+code {
+	font-family: 'Anonymous Pro', monospace;
+	background: #222;
+	color:#fff;
+	border-radius:4px;
+	padding:2px 4px;
+	margin:1px;
+}
+
+code var {
+	color:#ef5;
+	font-style:italic;
+}
+
+.atag {
+	font-family: 'Calistoga', serif;
+	font-size:90%;
+	color:#000;
+	background:#b00;
+
+	display:inline-block;
+	padding:1px 4px;
+	border-radius: 4px;
+	line-height:120%;
+}
+.atag:before {
+	content:'»';
+}
+.atag.extra {
+	background:#b08;
+}
+.atag.creative {
+	/* thanks, shout.horse! */
+	background:linear-gradient(0.4turn, #ffe680, #916f6f);
+}
+
+</style>
+</head>
+<body>
+<h1>A2: Materials
+<span class="subtitle">by Qiru Hu</span>
+</h1>
+
+I create a pipeline, a vertex shader and a fragment shader for each material. I separately store the models into model lists by their materials so that during rendering, I can bind the pipeline once for each kind of material and then bind specific material descriptor set for each unique material since binding can be expensive.
+
+I create a material for each model. I structure material as a container of textures. A material contains all possible textures owned by all material.  I convert all properties of a material into 2D texture map to reduce the number of material types.
+
+Each texture contains neccessary vulkan components for texture image such as VkImage, VkDeviceMemory, VkImageView, VkSampler and VkDescriptorImageInfo to bind for rendering. 
+
+
+<h2>My Model <span class="atag creative">A2-create</span></h2>
+
+
+I create a high-resolution and a low-resolution model for a rubrik's cube. I also create a normal texture, a albedo texture and a displacement texture.
+<br>
+Here's the low resolution rubrik's cube:
+<br>
+<img src="lowres.png" alt="low resolution rubrik's cube" width="500" height="300">
+<br>
+Here's the high resolution rubrik's cube:
+<br>
+<img src="highres.png" alt="high resolution rubrik's cube" width="500" height="300">
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="rubrikcube.mov" type="video/mp4">
+</video>
+<br>
+I create the rubrik's cube in both high resolution and low resolution version. In the high resolution version, I subdivide the cube to increase its resolution and add all the detail for each plastic panel in the cube. I bake this into a normal map and use it for the low resolution cube. I also paint the plastic panels with different colors and bake color into a albedo texture. I add a displacement map as well.
+
+<h2>My Code</h2>
+
+<h3>Loading lighting environments <span class="atag">A2-env</span></h3> 
+
+I include a simple environment maps <code>VkTextureCube environmentMap</code> for Environment and Mirror material in ViewerApplication, the Vulkan app defined in "src/include/viewer.h". It is shared by all materials of these 2 kinds. I expand UniformBufferObject in "src/include/vertex.hpp" to include <code>mat4 light</code>, a transformation matrix to transform objects from world space to light's local space (the environment map's local space), and <code>vec3 eye</code>, the camera's eye position.
+<br>
+The shader for Environment is implemented in "src/shaders/env.shader.frag" and "src/shaders/env.shader.vert". The shader for Mirror is implemented in "src/shaders/mirror.shader.frag" and "src/shaders/mirror.shader.vert". For Environment, the normal is first converted to world space and then to tangent space and then to light's space and used for sampling value from environmentMap. For Mirror, the view direction is calculated as the direction between eye and vertex position. The view direction is also converted to world space, tangent space then to light space and used for sampling value from environmentMap. 
+<br>
+The rgbe value sampled from HDR environmentMap is converted to radiance using <code>toRadiance()</code> function defined in a common glsl file "src/shaders/common.glsl". The eventual color is tone mapped radiance value.
+<br>
+Here's an image of cubes rendered with mirror(left) and environment(right) materials.
+<br>
+<img src="environment_mirror.png" alt="Environment and Mirror material" width="500" height="300">	
+<br>
+(Camera is placed along positive y axis)
+
+<h3>Tone mapping <span class="atag">A2-tone</span></h3>
+
+I used Uncharted 2 filmic tone mapping operator by John Hable with implementation in <code>uncharted2Tonemap</code> in "src/shaders/common.glsl".
+Here's a graph of filmic tone mapping's curve. It has three parts, a linear section, a shoulder, and a toe. John Hable explains that "a toe gives you crisper blacks, a shoulder gives you a softer transition to your overexposed highlights, and the linear section should look relatively unchanged".
+<br>
+<img src="uncharted2.png" alt="uncharted2 Tonemap" width="500" height="300">	
+<br>
+
+I use VK_COLOR_SPACE_SRGB_NONLINEAR_KHR color space and VK_FORMAT_B8G8R8A8_SRGB image format.
+<br>
+Here's screenshot of environment material without tone mapping (the cube on the right).
+<br>
+<img src="no_tone_map.png" alt="no tonemapping" width="500" height="300">	
+<br>
+Here's screenshot of environment material with tone mapping (the cube on the right).
+<img src="environment_mirror.png" alt="with tonemapping" width="500" height="300">
+
+<h3>Lambertian material <span class="atag">A2-diffuse</span></h3>
+
+I add <code>VkTextureCube lambertianEnvironmentMap</code> for Lambertian material in ViewerApplication. It is the irradiance map generated by pre-filtering the original environment cubemap using uniform sampling. The vulkan app will load lambertianEnvironmentMap when there are Lamertian material in the scene. 
+<br>
+The Lambertian shader is implemented in "src/shaders/lamber.shader.frag" and "src/shaders/lamber.shader.vert". In fragment shader, the albedo color is sampled using textual coordinate and multiplied by the radiance sampled from lambertian environment map as the final color.
+<br>
+I implemented the pre-filtering cube utility function <code>prefilterEnvironmentMapLambertian</code> in "src/cube.cpp". The cube executable takes in 3 arguments <code>input.png --FLAG ouput.lambertian.png</code>. It generate environment map for lambertian when the flag is <code>--lambertian</code>. It first converts input pixel value from rgbe to rgb. Then it randomly sample spherical coordinate for each texel of the output cubemap using theta in range [0, pi/2] and phi in range [0, 2*pi] computed from Hammersley importance sampling. The spherical coordinate is then converted to cartesian direction, transformed by the texel direction and transformed to the world of input cubemap. Then the direction is used to look up for rgbe value from the input cubemap, which is weighted by cos theta. Lastly, the rgb value is mapped back to rgbe and saved as output. I have also tried uniformaly sampling theta and phi with fixed coordinates, however it has severe artifacts.
+<br>
+Here's the env-cube lighting environment and its lookup table.
+<br>
+<img src="ox_bridge_morning.png" alt="Environment map lambertian" width="128" height="768">
+<img src="ox_bridge_morning.lambertian.png" alt="Environment map lambertian" width="128" height="768">
+<br>
+Here's the rendering of 2 lambertian sphere
+<br>
+<img src="lambertian.png" alt="Environment map lambertian" width="500" height="300">
+
+
+<h3>Normal maps <span class="atag">A2-normal</span></h3>
+
+I convert normal N and tangent T to world space and calculated bitangent B. I then transform the local normal sampled from normal map to world space using the matrix TBN. Lastly, I transform the new normal to light's space using light matrix and use the new normal to sample radiance from environment map.
+<br>
+Here's a scene of a plane with the lambertian material without normal map:
+<br>
+<img src="no_normal.png" alt="without normal map" width="500" height="300">
+<br>
+<br>
+Here're screenshots of the lambertian material with normal map and rotated 90 degrees:
+<br>
+<img src="normal_lam_r1.png" alt="with normal map and rotated 90 degrees" width="500" height="300">
+<br>
+<img src="normal_lam_r2.png" alt="with normal map and rotated 180 degrees" width="500" height="300">
+<br>
+
+
+<br>
+Here's the environment material with normal map:
+<br>
+<img src="normal_env.png" alt="env with normal map" width="500" height="300">
+<br>
+<br>
+Here's the mirror material with normal map:
+<br>
+<img src="normal_mirror.png" alt="mirror with normal map" width="500" height="300">
+<br>
+<br>
+Here's the lambertian material with normal map:
+<br>
+<img src="normal_lam.png" alt="lambertian with normal map" width="500" height="300">
+<br>
+<br>
+Here's the pbr material with normal map:
+<br>
+<img src="normal_pbr.png" alt="pbr with normal map" width="500" height="300">
+<br>
+
+
+
+<h3>PBR material <span class="atag">A2-pbr</span></h3>
+
+<p class="placeholder">
+Show screenshots or screen recordings of a variety of interesting material appearances demonstrating the parameter range of the <code>"pbr"</code> material.
+</p>
+
+I add <code>VkTextureCube pbrEnvironmentMap</code> to ViewerApplication for Pbr material. It is the HDR environment map generated by pre-filtering the original environment cubemap using importance sampling with GGX distribution and Hammersley sequence. I also add <code>VkTexture2D lut</code> which is the BRDF look up table generated for computing BRDF integration.</li> For all properties of Pbr material, either float or vec3, I convert them to a small fixed-size texture. This helps reduces the variances of the material.
+<br>
+To get PBR environment map, run <code>./bin/cube input.png --ggx output.png</code>. It will generate 5 mipmaps with names "output.ggx.N.png". To get lut, run <code>./bin/cube --lut output.png</code> and it will generate output.lut.png. It is computed by taking each texture coordinates as (NdotV, roughness) and the result is a vec2 (scale, bias). 
+<br>
+The shader for PBR material is defined in "src/shaders/pbr.shader.frag" and "src/shaders/pbr.shader.vert". In fragment shader, it computes the diffuse color the same way as in lambertian material. It computes specular shading using prefiltered color multiplied by (F * scale + bias).
+<br>
+Here's the env-cube look-up cubemaps in different mip level (roughness).
+<br>
+<img src="ox_bridge_morning.ggx.0.png" alt="Environment map pbr 0" width="128" height="768">
+<img src="ox_bridge_morning.ggx.1.png" alt="Environment map pbr 1" width="64" height="384">
+<img src="ox_bridge_morning.ggx.2.png" alt="Environment map pbr 2" width="32" height="192">
+<img src="ox_bridge_morning.ggx.3.png" alt="Environment map pbr 3" width="16" height="96">
+<img src="ox_bridge_morning.ggx.4.png" alt="Environment map pbr 4" width="8" height="48">
+<br>
+
+Here's the image of 2 pbr sphere with roughness=0.1, metallness=0.9 and roughness=0.9, metallness=0.1:
+<br>
+<img src="pbr.png" alt="pbr 2 spheres" width="500" height="290">
+
+<h3>Displacement map <span class="atag extra">A2x-displacement</span></h3>
+
+Same as normal map, I converted all coordinates/direction to world space first and then use TBN matrix to convert them to tangent space. I then calculate the displaced texture coordinates using displacement map in tangent space and eventually turn the directions to light space for sampling environment map.
+(I downloaded this displacement map and normal map online)
+<br>
+Here's the environment material with displacement map:
+<br>
+<img src="dis_env.png" alt="env with displacement map" width="500" height="300">
+<br>
+Here's the mirror material with displacement map:
+<br>
+<img src="dis_mirror.png" alt="mirror with displacement map" width="500" height="300">
+<br>
+Here's the lambertian material with displacement map:
+<br>
+<img src="dis_lam.png" alt="lambertian with displacement map" width="500" height="300">
+<br>
+Here's the pbr material with displacement map:
+<br>
+<img src="dis_pbr.png" alt="pbr with displacement map" width="500" height="300">
+<br>
+
+<br>
+Here's the environment material with displacement map in different directions:
+<br>
+<img src="dis_dir.png" alt="env with displacement map" width="500" height="300">
+<br>
+<img src="dis_dir2.png" alt="env with displacement map" width="500" height="300">
+
+<h2>Performance Tests</h2>
+
+Relevant information about testing system:
+<ul>
+    <li>CPU: 10-core</li>
+    <li>GPU: 16-core</li>
+    <li>Memory: 16 GB</li>
+    <li>OS version: Mac OS 13.0.1 (22A400)</li>
+</ul>
+
+For the performance tests below, I rendered each test scene in headless mode with a events file documenting events for 10 iterations of animations with 120 frames per iterations. I then measured the frame time for each frame and calculated the average rendering time for each iteration or every 120 frames. I used the total rendering time for performance comparison.
+
+<h3>Material Performance</h3>
+
+
+Average rendering time for materials (with normal map) in low resolution rubik's cube scene
+<ul>
+	<li>Environment: 0.330069s</li>
+	<li>Mirror: 0.333723s</li>
+	<li>Lambertian: 0.338941s</li>
+	<li>Pbr: 0.348661s</li>
+</ul>
+The environment material is the fastest while the pbr material is the slowest.
+
+Average rendering time for Pbr material w/wo normal map in low resolution rubik's cube scene
+<ul>
+	<li>Environment without normal maps: 0.277944s</li>
+	<li>Environment with normal maps: 0.330069s</li>
+</ul>
+The environment material without normal map is faster due to less computation.
+
+
+
+
+<h3>Texture vs Vertex Detail</h3>
+
+Average rendering time for
+<ul>
+	<li>a high-resolution mesh with a lambertian material (high resolution rubrik's cube scene with 6146 vertices): 0.349299s</li>
+	<li>a low resolution mesh with a normal map and a lambertain material (low resolution rubrik's cube scene with 296 vertices): 0.338941s</li>
+</ul>
+The texture detail is cheaper than vertex detail when the high-resolution mesh has much more vertices than the low-resolution mesh.
+
+<h2>Feedback</h2>
+Please consider more time for the future assignments. 
+
+</body>
+</html>

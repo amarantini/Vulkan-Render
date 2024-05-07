@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15-472-s24: A1 - Scene Graph</title>
+<style>
+/* feel free to style your report in a fancier way! */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;700&Anonymous+Pro&display=swap');
+
+html {
+	background:#505055;
+}
+
+body {
+	font-family: 'Quicksand', sans-serif;
+	color:#000;
+	background:#eeeee8;
+	font-size:15px;
+	margin: 1em auto 50vh auto;
+	padding: 1em 2em 1em 2em;
+	max-width:45em;
+	border-radius:4px;
+	box-shadow:0 0 10px #0008;
+}
+
+h1 { font-size: 20px; font-weight: 700; }
+h2 { font-size: 16px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 400; }
+h4 { font-size: 14px; font-weight: 400; }
+
+h1, h2, h3, h4 {
+	margin: 15px 0 0 -10px;
+}
+
+p {
+	margin: 5px 0 0 0;
+}
+
+.subtitle {
+	display:block;
+	font-size:16px;
+	font-weight:400;
+}
+
+.placeholder {
+	color:#800;
+	font-style:italic;
+}
+
+kbd {
+	display:inline-block;
+	background:#ccc;
+	color:#444;
+	font-style:normal;
+	font-weight:700;
+	border-radius:8px;
+	padding:1px 6px;
+	margin:1px;
+	border:1.5px solid #aaa;
+}
+
+code {
+	font-family: 'Anonymous Pro', monospace;
+	background: #222;
+	color:#fff;
+	border-radius:4px;
+	padding:2px 4px;
+	margin:1px;
+}
+
+code var {
+	color:#ef5;
+	font-style:italic;
+}
+
+.atag {
+	font-family: 'Calistoga', serif;
+	font-size:90%;
+	color:#000;
+	background:#b00;
+
+	display:inline-block;
+	padding:1px 4px;
+	border-radius: 4px;
+	line-height:120%;
+}
+.atag:before {
+	content:'»';
+}
+.atag.extra {
+	background:#b08;
+}
+.atag.creative {
+	/* thanks, shout.horse! */
+	background:linear-gradient(0.4turn, #ffe680, #916f6f);
+}
+
+</style>
+</head>
+<body>
+<h1>A1: Scene Viewer
+<span class="subtitle">by Qiru Hu</span>
+</h1>
+
+In summary, I build my Vulkan renderer with 4 major components:
+<ul>
+    <li>Viewer Application -- the Vulkan app that render the scene and has access to multiple controllers.</li>
+    <li>Controllers -- each individual controller manages different sub-tasks. For example, camera controller manages camera storage, switch, transformation, and movement. Animation controller manages driver storage, animating, pause, resume and restart of animation. Window controller handles window creation and resize. Input controller handles user key and mouse input. Events controller handles event parsing and accessing.</li>
+    <li>Scene object instances -- when parsing the scene.s72 file, scene object instances such as Transform, Camera, Mesh, Driver are created using shared_ptr. The scene graph is saved as a list of Mesh and their immediate Transform. They are passed into Viewer Application for rendering. The app can compute the Mesh's transform in world space using Transform's <code>localToWorld</code> function </li>
+    <li>Math and utils -- math library such as vec, mat and qua and utils library such as arg parser, Json parser are created to help with code reuse</li>
+</ul>
+
+<h2>My Animation <span class="atag creative">A1-create</span></h2>
+
+
+My animation shows a ping pong game in the <a href="./pingpong/pingpong.s72">pingpong.s72</a> scene. The ping pong ball is tossed into air. The red ping pong bat hit the ball diagonally across the table to the opponent's side. the blue ping pong bat catch the ball and hit it back. The scene also includes a ping pong table and a plane.
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="pingpong.mov" type="video/mp4">
+</video>
+<br>
+I created my animation using Blender. The ping pong table is made of 2 cubes (surface and net) and 4 cyclinders (legs). The ping pong bats are made of 2 cyclinders. 
+I created the animation by inserting keyframes for the location and rotation of ping pong bats and the location of the ball.
+I painted vertex color for the ping pong bats, ball and table by first creating a color attribute for each of the objects and using vertex paint mode in texture paint window to paint vertex color.
+I painted vertex color using keyboard shortcut: first select the mesh to paint, then Ctrl-Tab-8 to select vertex paint, A to select all faces, and Ctrl-X to paint color. 
+To view the vertex color in normal mode, I added a color attribute node to the material and link the color in color attribute and the color in material.
+
+
+<h2>Using the Scene Viewer</h2>
+
+
+To compile the Scene Viewer, run "node Maekfile.js" from the root directory.
+The executable is compiled into /bin folder.
+<br>
+To run the Scene Viewer, run the command <code>./bin/viewer --scene [folder]/scene.s72 ...</code> from the command line. The scene file should be placed in /scene/[folder] directory outside the code's root directory. So the total relative path is "../scene/[folder]/scene.s72". 
+
+<h3>Command-line Arguments</h3>
+
+<ul>
+<li><code>--scene <var>[folder]/scene.s72</var></code> -- required -- load scene from scene.s72 under "/scene/[folder]" directory</li>
+<li><code>--camera <var>camera-name</var></code> -- not required -- view the scene through the camera named name. If such a camera doesn't exist in the scene, abort</li>
+<li><code>--physical-device <var>device-name</var></code> -- not required -- use the physical device whose <code>VkPhysicalDeviceProperties::deviceName</code> matches name. If such a device does not exist, abort</li>
+<li><code>--list-physical-devices</code> -- not required -- list all available physics devices</li>
+<li><code>--window-size <var>w h</var></code> -- not required -- set the initial size of the drawable part of the window in physical pixels. If not specified, use default size <code><var>800 450</var></code></li>
+<li><code>--culling <var>cull-mode</var></code> -- not required -- set the culling mode. Available choices are "None" and "Frustum". Default to None</li>
+<li><code>--headless <var>event_file_name</var></code> -- not required -- enable headless mode. Execute event in events file specified by <code><var>event_file_name</var></code></li>
+<li><code>--animation-no-loop</code> -- not required -- disable animation loop. The animation loops in default setting</li>
+<li><code>--measure</code> -- not required -- print the elapse time between 2 consequtive frames and the total time at the end. User can set the max number of frames they want to measure in constants.h for window mode</li>
+</ul>
+
+<h3>Controls</h3>
+
+<ul>
+<li ><kbd>A</kbd> Rotate camera left</li>
+<li ><kbd>D</kbd> Rotate camera right</li>
+<li ><kbd>W</kbd> Rotate camera upward</li>
+<li ><kbd>S</kbd> Rotate camera downward</li>
+<li ><kbd>Q</kbd> Move camera forward</li>
+<li ><kbd>E</kbd> Move camera backward</li>
+
+<li ><kbd>C</kbd> Switch camera in order (including cameras in scene and movable user and debug camera)</li>
+<li ><kbd>B</kbd> Switch to debug camera. The culling test is performed through the previously active camera.</li>
+<li ><kbd>P</kbd> Pause/resume animation</li>
+<li ><kbd>R</kbd> Restart animation</li>
+<li ><kbd>LMB+Drag</kbd> Resize the window by dragging the corner of the window</li>
+<li ><kbd>LMB</kbd> Close the window by clicking the close button ("x") on the window</li>
+<li ><kbd>LMB</kbd> Hide the window by clicking the hide button ("-") on the window</li>
+</ul>
+
+
+<h2>My Code</h2>
+
+<h3>Support Code for Math and Vulkan</h3>
+
+<h4>Math code</h4>
+Math code is stored under "src/include/math/" folder.
+<br>
+I implemented <code>vec</code> in "vec.h" using template class <code>vec&lt;T,size></code> to avoid writing duplicated code. I specifically define vec2, vec3, vec4 of float type for convenience.
+The data is stored in template member variable <code>std::array&lt;T, size> data</code>. 
+It supports various constructors, math calculations and output as string/to stream.
+<ul>
+    <li><code>vec()</code> -- create a zero vector</li>
+    <li><code>vec(T _x)</code> -- create a vector with all element assigned value <code>_x</code></li>
+    <li><code>vec(T _x, T _y)</code> -- create a 2d vector (use assert to ensure correct size and number of arguments)</li>
+    <li><code>vec(T _x, T _y, T _z)</code> -- create a 3d vector</li>
+    <li><code>vec(T _x, T _y, T _z, T _w)</code> -- create a 4d vector</li>
+    <li><code>vec(vec&lt;T,2> v, T _z), vec(T _x, vec&lt;T,2> v)</code> -- create a 3d vector using 2d vector</li>
+    <li><code>vec(vec&lt;T,3> v, T _z), vec(T _x, vec&lt;T,3> v), </code> -- create a 4d vector using 3d vector</li>
+    <li><code>vec(std::vector&lt;T> vec)</code> -- create vector using std::vector (use assert to ensure correct size and number of arguments)</li>
+    <li><code>operator[](uint32_t idx)</code> -- access individual element </li>
+    <li><code>operator+=, operator-=, operator*=, operator/=, operator+, operator-, operator*, operator/</code> -- add, subtract, multiply, divide with a float or another same sized vector</li>
+    <li><code>operator-()</code> -- negate the vector</li>
+    <li><code>norm()</code> -- calculate the norm</li>
+    <li><code>normalize()</code> -- normalize the vector inplace</li>
+    <li><code>normalized()</code> -- return a normalized vector</li>
+    <li><code>as_string()</code> -- return the vector as a string</li>
+    <li><code>operator<<()</code> -- output the vector as a string to output stream</li>
+    <li><code>operator==(vec<T,size> l, vec<T,size> r)</code> -- check equality of 2 vector</li>
+</ul>
+
+
+<br>
+I implemented <code>mat</code> in "mat.h" as template class <code>mat&lt;T,row_size, col_size></code>, similarly to reduce duplicated code. I specifically defined mat2, mat3, mat4 of float type for convenience.
+The data is stored in <code>std::array&lt;vec&lt;T,row_size>,col_size> data</code> in column major.
+It supports various constructors, math calculations and output as string/to stream.
+<ul>
+    <li><code>static mat::I</code> -- return an identity matrix</li>
+    <li><code>static mat::Zero</code> -- return a zero matrix</li>
+    <li><code>mat()</code> -- create a matrix with all value initialized to zero</li>
+    <li><code>mat(T s)</code> -- create a matrix with all value initialized to <code>s</code></li>
+    <li><code>mat(const COL_TYPE v1, const COL_TYPE v2, ...)</code> -- create matrix with multiple vec of <code>COL_TYPE</code></li>
+    <li><code>mat(float m00, float m10, float m01, float m11)...</code> -- create 2x2, 3x3, and 4x4 matrix by specifying every element</li>
+    <li><code>operator[]</code> -- access individual element of the matrix</li>
+    <li>add, subtract, multiply, divide with a float or another same sized matrix (elementwise operation)</li>
+    <li><code>operator*(const mat&lt;T,m_row_size,m_col_size> m)</code> -- multiply with another matrix</li>
+    <li><code>operator*(const vec&lt;T,col_size> v)</code> -- multiply with a vector</li>
+    <li><code>as_string()</code> -- return the matrix as a string</li>
+    <li><code>operator<<()</code> -- output the matrix as string to output stream</li>
+    <li><code>transpose()</code> -- return the transpose of the matrix</li>
+</ul>
+
+<br>
+I implemented <code>qua</code> in "qua.h" with data stored in <code>vec4</code>.
+It supports various constructors, math calculations and quaternion conversion.
+<ul>
+    <li><code>qua()</code> -- create a quaternion with all value initialized to zero</li>
+    <li><code>qua(const float x, const float y, const float z, const float w)</code> -- create a quaternion by specifying every element</li>
+    <li><code>qua(const std::vector<double> v)</code> -- create a quaternion with a <code>std::vector</code></li>
+    <li><code>qua(const vec4& v)</code> -- create a quaternion with a <code>vec4</code></li>
+    <li><code>qua(float x, const vec3 v), qua(const vec3 v, float w)</code> -- create a quaternion with a float and a <code>vec3</code></li>
+    <li><code>operator[]</code> -- access individual element of the quaternion</li>
+    <li><code>operator*(float s)</code> -- multiply with a float </li>
+    <li><code>operator+(const qua q)</code> -- add another quaternion elementwise</li>
+    <li><code>toVec()</code> -- convert the quaternion to a vec4</li>
+    <li><code>inv()</code> -- return the inverse of the quaternion</li>
+    <li><code>operator*(const qua r) </code> -- perform quaternion multiplication</li>
+    <li><code>pitch(), yaw(), roll()</code> -- compute pitch, yaw, roll</li>
+    <li><code>toEuler()</code> -- convert quaternion to euler angles</li>
+</ul>
+
+<br>
+Other helpful math functions are defined in "math_utils.h":
+<ul>
+    <li><code>cross(const vec3 l, const vec3 r)</code> -- return the cross product of 2 <code>vec3</code>s</li>
+    <li><code>dot(const vec&lt;T,size> l, const vec&lt;T,size> r)</code> -- return the dot product of 2 template <code>vec</code></li>
+    <li><code>vmin(const vec&lt;T,size>& l, const vec&lt;T,size>& r)</code> -- return a <code>vec</code> whose elements are minimum of both (used for bounding box)</code></li>
+    <li><code>vmax(const vec&lt;T,size>& l, const vec&lt;T,size>& r)</code> -- return a <code>vec</code> whose elements are maximum of both (used for bounding box)</li>
+    <li><code>degToRad(float deg)</code> -- convert degree to radians</li>
+    <li><code>lerp(const vec3 start, const vec3 end, float t /* a fraction of 1*/)</code> -- liner interpolation between 2 <code>vec3</code>s</li>
+    <li><code>perspective(const float vfov, const float aspect, const float near, const float far)</code> -- calculate perspective matrix based on vertical field of view, aspect ratio, near and far clipping distance </li>
+    <li><code>translationMat(vec3 t)</code> -- prepare a translation matrix</li>
+    <li><code>scaleMat(vec3 s)</code> -- prepare a scale matrix</li>
+    <li><code>rotationMat(qua r)</code> -- prepare a rotation matrix (from a quaternion)</li>
+    <li><code>eulerToQua(vec3 euler)</code> -- convert euler angles to a quaternion</li>
+    <li><code>quaLerp(const qua qStart, const qua qEnd, float t)</code> -- linear interpolation between 2 quaternions</li>
+    <li><code>slerp(const qua qStart, const qua qEnd, float t)</code> -- spherical linear interpolation between 2 quaternions</li>
+    <li><code>angleAxis(const float& angle, const vec3& dir)</code> -- return a quaternion from an angle and a axis</li>
+</ul>
+
+
+
+<h4>Window controller code</h4>
+I get a window using glfw following the vulkan tutorial. To enable future replacement of glfw, I refactor the code for window into a <code>WindowController</code> class defined in "src/include/controllers/window_controller.h". This controller handles the creation, resize and deletion of the window. 
+
+<h4>Vulkan app code</h4>
+The Vulkan app code is defined in "src/include/viewer.h".
+I create a swapchain inside the Viewer Application which is the Vulkan app that manage Vulkan resources and rendering pass. The Viewer app is initialized in main. It will first set up certain configurations passed in from command line arguments such as scene file name, camera, width and height, headless mode, culling, and measure mode. Then the app starts running and creating Vulkan resources and the render pipeline. In <code>mainLoop()</code>, the app recomputes mesh and camera transformation and render the image. In window mode, the app stops when the window is closed. The window controller monitors this event. In headless mode, the app stops when all events are processed. After exiting <code>mainLoop()</code>, the app called <code>cleanUp</code> to destroy all Vulkan resources. The Vulkan resources are currently created and maintained as member of <code>ViewerApplication</code>. I will later refactor the code out to their wrapper class to enable better resource management.
+
+<h3>Loading scenes, Mesh data <span class="atag">A1-load</span></h3> 
+
+My scene loader parses scene.s72 using customized Json parser defined in "src/include/utils/json_parser.h", which is a simplified Json parser that can parse number (as double), string, array (as vector of doubles) and object.
+I referenced <a href="https://github.com/ixchow/sejp/tree/main">sejp</a> while implementing the Json parser. 
+<br>
+This Json parser stores data in a <code>JsonData</code> object which contains vectors of numbers, strings, arrays and objects.
+Each <code>JsonValue</code> has a shared_ptr referencing the JsonData, a value type, and an index to retrieve the actual value from the vector specific for its type.
+To retieve information from scene.s72, the Json parser returns a <code>JsonList</code>, a list of shared_ptr of JsonValue.
+<br>
+The scene loader, which is a <code>Scene</code> class defined in "src/include/scene/scene.h" loads each item from the JsonList into scene object instances of type <code>Transform, Mesh, Camera, Driver</code>. 
+Since the objects may not be recorded in topological order, the scene loader stores a list of references between 2 objects such as a Transform and a Mesh while parsing, and relate them later after creating all scene object instances.
+While processing the references, I also create a list of <code>ModelInfo</code>, which contains a shared_ptr to a Mesh and shared_ptr to a Transform. They are the objects to render and their transform.
+This list of ModelInfos is later passed into the Vulkan app.
+<br>
+Here's a brief introduction of the scene object instances:
+<ul>
+    <li><code>Transform</code>, which is defined in "src/include/scene/transform.h", contains translation(vec3), scale(vec3), rotation(qua) and <code>localToWord()</code> and <code>worldToLocal()</code> functions which will be used to generate model matrix.</li>
+    <li><code>Mesh</code>, which is defined in "src/include/scene/mesh.h", contains load information(src, offset, stride), a list of vertices, and a bounding box. When the mesh is created, the vertex attributes will be loaded from b72 file and the bounding box is calculated at the same time.</li>
+    <li><code>Camera</code>, which is defined in "src/include/scene/camera.h", contains aspect, vfov, near, far, a shared_ptr to Transform, movable(true for user and debug camera), debug(true for debug camera only), and euler angles (for moving).</li>
+    <li><code>Driver</code>, which is defined in "src/include/scene/driver.h", contains channel, a vector of timestamps, a vector for 3d values(translation and scale), a vector for 4d values(rotation), interpolation method, a shared_ptr to Transform, current frame index, current frame time, and whether to loop animation. </li>
+</ul>
+
+<h3>Drawing the scene. <span class="atag">A1-show</span></h3>
+I defined a <code>CameraController</code> to manage the transformations of camera.
+In main loop, during each frame, delta time is computed using <code>chrono</code> and passed into camera controller which will check if the camera move keys have been pressed and recompute rotation and translation based on the key pressed and delta time.
+In the <code>updateUniformBuffer()</code> function, the viewer app will ask camera controller to recompute projection and view matrix and then update uniform buffer.
+The view matrix (transformation) of the camera is calculated using Transform's <code>worldToLocal()</code> function.
+
+<br>
+The Vulkan app sets up the scene after receiving the scene file information and obtains a list of <code>ModelInfo</code> (containing mesh and transform).
+For each model to be rendered, the app creates <code>VkModel</code> with a Vertex Buffer and associated memory, and load the vertices from Mesh into the Vertex Buffer.
+In each frame, the app loops through the list of <code>VkModel</code>, recompute the model matrix, load it into a Push Constant and pass to the shader.
+
+<br>Here's the Articulation example scene rendered from the viewer.<br>
+<img src="Articulation.png" alt="example scene" width="500" height="300">
+
+
+<h3>Handling interactive camera and debug camera movement. <span class="atag">A1-show</span></h3>
+I decided to implement rotation and movement for a free-flying camera. To reduce reliance on mouse, the camera can only be moved using keyboard.
+The camera can rotate up, down, left and right with W, S, A, D and move forward and backward with Q and E.
+
+Camera controls are implemented in <code>CameraController</code> in "src/include/controllers/camera_controller.h". The rotation is computed using euler angles instead of Quaternion because it is much more simpler to update euler angles.
+I added a user camera and a debug camera in addition to cameras included in the scene. When the app is opened, user camera will be used initially. User can switch camera using C key.
+User can move user camera and debug camera freely.
+When debug camera is switched on, the objects culled by the previously active camera will not be rendered. User can switch from another camera to debug camera using B key.
+
+I printed the current camera to the terminal when switching happends. In the future, I may display the camera name on the window directly.
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="moving_camera.mov" type="video/mp4">
+</video>
+
+
+<h3>Frustum culling <span class="atag">A1-cull</span></h3>
+I implemented Frustum culling in clip space. 
+For each mesh, I computed its bounding box which contains 2 corners: the min and the max. The bounding box is computed while loading the vertices from the binary file.
+To perform culling, I transform each corner of the bounding box into clip space and check whether they are outside the clip space,
+i.e. -w < x < w, -w < y < w, 0 < z < w. I also check the situation that the corners of the bounding box all outside the clip space but the object is inside the clip space, for example, a long wall.
+In this case, I check whether all corners are outside a particular plane of the clip space. For example, the corners of a long wall must be within the near and far clipping plane when the camera is facing the wall.
+The code for Frustum culling test and bounding box is in "src/include/scene/bbox.h".
+<br>
+Here's a screen recording of culling in Articulation scene. The first camera is the user camera. The second camera is the debug camera. When culling is enabled, only the cube and the plane are rendered in the debug camera view.
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="culling.mov" type="video/mp4">
+</video>
+This is not a perfect culling method. However, it is fast to compute and effective in most cases.
+
+<h3>Animating the scene <span class="atag">A1-move</span></h3>
+
+The keyframes are stored in a <code>Driver</code> object when the scene is loaded. 
+Driver contains channel, timestamps, vectors of 3d/4d values, interpolation method, a shared_ptr to Transform, current frame index, current frame time, and whether to loop animation.
+It also has functions to restart the animation, set playback time, and animate.
+When <code>animate(deltaTime)</code> function is called, the driver updates the frame time by adding delta time. It then increments the frame index if current frame time is greater than the timestamp of the next key frame.
+The transform is then updated using different interpolation functions given the specified interpolation method.
+The code for <code>Driver</code> is in "src/include/scene/driver.h".
+<br>
+I defined a <code>AnimationController</code> in "src/include/controllers/animation_controller.h" which manages all the Driver objects and drives animation for each frame. It pauses or resumes animation if P key is pressed. It restarts the animation if R key is pressed. It can also set animation play back time (used in headless mode).
+<br>
+The elapsed time is computed in the main loop of vulkan app using <code>chrono</code>. The app keeps track of the time of the previous frame. In the current frame, it calculates the elapsed time between the current time and the time of the last frame.
+
+<video width="500" height="350" controls autoplay>
+    <source src="animation_pause_restart.mov" type="video/mp4">
+</video>
+
+
+
+<h3>Handling headless mode <span class="atag">A1-hide</span></h3>
+
+I implemented headless mode using <code>VK_EXT_headless_surface</code>, thanks to the post by David.
+In headless mode, the glfw window will not be created. Instead, a <code>VkHeadlessSurface</code> is created. We have to explicitly add VK_KHR_SURFACE_EXTENSION_NAME to the list of required extensions to make the code work.
+<br>
+I defined a <code>EventController</code> in "src/include/controllers/event_controller.h", which parses the events file, creates a list of <code>Event</code>s and retrieves next event.
+In the main loop, the Vulkan app gets the next event from the event controller if it has not ran out of events and executes each event. It calculates the time elapsed between 2 events to update animation.
+
+For AVAILABLE event, it draws the next frame. 
+For SAVE event, I referenced the <a href="https://github.com/SaschaWillems/Vulkan/blob/master/examples/screenshot/screenshot.cpp">vulkan example</a> by Sascha Willems and implemented a sceenshot function. This <code>screenshotSwapChain</code> function acquires the most-recently-rendered image in the swap chain, transfers its image layout, saves it to a local ppm file, and then transfers it back to present layout.
+Sascha Willems' git repo is a great source for learning Vulkan. It also teaches me how to reorganize and refactor Vulkan code. I'll refactor my Vulkan code based on his example later when I have time.
+<br>
+Here's a thing to note: for drawing frame in headless mode, <code>vkQueuePresentKHR</code> will not return <code>VK_SUCCESS</code>. But it needs to present the image to prompt the swap chain to get next image. Hence, I skipped the checking of  <code>vkQueuePresentKHR</code> result in headless mode.
+
+</p>
+
+<h3>Performance improvements <span class="atag extra">A1x-fast</span></h3>
+
+I worked on one performance improvement measure: the index buffer.
+I transform the loaded meshes into indexed meshes. This is done by hashing vertices into a hash set based on their position (x,y,z coordinates), resize the vertices list and assign vertex back to the list based on thier position.
+I implemented a custom hashing/comparison struct for the hash map to compare Vertex.
+The function to calculate indices, <code>calculateIndices</code>, is implemented in "src/include/scene/mesh.h". If enabled, the indices will be calculated directly after the vertices are loaded from binary files. 
+In the Vulkan app, an index buffer will be created alongside the index bufffer for each model to be rendered. The indices will be copied into the index buffer. During rendering, <code>vkCmdDrawIndexed</code> will be called instead of <code>vkCmdDraw</code>.
+
+<h2>Performance Tests</h2>
+
+Rlevant information about your testing system:
+<ul>
+    <li>CPU: 10-core</li>
+    <li>GPU: 16-core</li>
+    <li>Memory: 16 GB</li>
+    <li>OS version: Mac OS 13.0.1 (22A400)</li>
+</ul>
+
+
+<h3>Culling</h3>
+The culling mode improves performace when the number of vertices is huge and there are many meshes that can be culled from camera view. In this  <a href="./culling/culling_test.s72">culling_test.s72</a> scene, there are 90 spheres and 259200 vertices in total. The camera in the scene rotates from left to right and scans over the spheres. 
+Here's the scene.<br>
+<img src="culling_scene.png" alt="Culling scene" width="500" height="250"><br>
+Here's the camera view.<br>
+<img src="culling_camera_view.png" alt="Culling camera view" width="500" height="300">
+<br>
+It is observed that only a few spheres show up in the camera view. Hence, culling can avoid shading the large number of spheres outside the camera view frustum.
+Indeed, when culling mode is enabled, the average rendering time for 120 frames reduced from 0.12180s to 0.03297s, i.e. frame rate increases from about 985 fps to 3640 fps.<br>
+<img src="perf_culling_test_ft_headless.png" alt="Culling camera view" width="500" height="350">
+
+<br>
+However, the culling mode makes the performance worse in Articulation scene when viewing from the Arm-Camera, an animated Camera. This is probably because the meshes included in the scene have fewer vertices. Compute culling test is expensive on the CPU.
+
+Here's a screen recording of culling in the view of Arm-Camera in Articulation scene.<br>
+<video width="500" height="350" controls autoplay>
+    <source src="culling2.mov" type="video/mp4">
+</video><br>
+
+The average rendering time increases from 0.02916s to 0.03009s with culling, i.e. frame rate decreases from 4114 fps to 3988 fps. Since the difference is tiny, and the performance varies at different time because CPU may be occupied by other processes, I conclude that frustum culling has limited effect on the performance when the number of vertices are small.<br>
+<img src="perf_culling_ar_ft_headless.png" alt="Performance Graph for culling" width="500" height="350">
+
+
+<h3>Bottlenecks</h3>
+<!-- <p class="placeholder">
+Demonstrate your code bottlenecking on scene traversal (CPU), vertex processing/assembly (GPU), and fragment processing/write-back (GPU).
+</p> -->
+
+For the bottleneck analysis below, I rendered each test scene in headless mode with a events file documenting events for 10 iterations of animations with 120 frames per iterations. I then measured the frame time for each frame and calculated the average rendering time for each iteration or every 120 frames. I used the average rendering time for performance comparison. I also disabled index buffer and culling.
+
+
+<h4>CPU Bottleneck</h4>
+The scenes <a href="./traversal/traversal.s72">traversal.s72</a>causes my viewer to bottleneck on scene traversal. I tested the traversal scene with 108, 216 and 532 spheres respective with each sphere nested under 186 layers of empty nodes. 
+This plot shows that as the number of spheres under deep hierarchy increases, the average rendering time also increases.
+<br>
+<img src="perf_cpu.png" alt="dragon scene" width="500" height="350">
+<br>
+Here's a graph for the frame time over all frames for each traversal scene.
+<br>
+<img src="perf_cpu_ft.png" alt="dragon scene" width="500" height="350">
+
+
+<h4>Vertex processing/assembly (GPU) Bottleneck</h4>
+The scenes <a href="./dragons/dragons.s72">dragons.s72</a> causes my viewer to bottleneck on Vertex processing/assembly (GPU). It is a scene that contains many Stanford dragon models. I tested the dragon scenes with 15 dragons (11244690 vertices), 30 dragons (22489380 vertices), 45 dragons (33734070 vertices), and 60 dragons (44978760 vertices) individually.
+<br>
+<img src="dragon.png" alt="dragon scene" width="500" height="350">
+<br>
+This plot shows that as the number of vertices (number of dragons) increases, the average rendering time increases almost linearly. 
+<br>
+<img src="perf_vertex.png" alt="dragon scene" width="500" height="350">
+<br>
+Here's a graph for the frame time over all frames for each dragon scene.
+<br>
+<img src="perf_vertex_ft.png" alt="dragon scene" width="500" height="350">
+
+
+<h4>Fragment processing/write-back (GPU) Bottleneck</h4>
+The scenes <a href="./bunny/bunny.s72">bunny.s72</a> causes my viewer to bottleneck on Fragment processing/write-back (GPU). It contains a rotating Stanford bunny.
+<br>
+<img src="bunny.png" alt="bunny scene" width="500" height="350">
+<br>
+I tested the scene by rendering it with width and height set to 512, 1024, 2048, 4096, 8192, and 16384 respectively.
+This plot shows that as the width and height of image (or the width and height of swap chain) increases, the average rendering time increases. 
+<br>
+<img src="perf_img_size.png" alt="bunny scene" width="500" height="350">
+<br>
+Here's a graph for the frame time over all frames for the bunny scene rendered with different drawing size.
+<br>
+<img src="perf_img_size_ft.png" alt="bunny scene" width="500" height="350">
+
+
+<h3>Performance Improvements</h3>
+
+I implemented Index Buffer to improve performace. I calculated the index for each vertex in a mesh, reduce the vertices list to include only unique vertices in order of their index and submit the indices to the shader.
+
+I tested the Index Buffer in the <a href="./bunny/bunny.s72">bunny.s72</a> scene again. 
+<br>
+<img src="bunny.png" alt="bunny scene" width="500" height="350">
+<br>
+From the experiment result, it shows that there is a significant improvement in performance when indexing can hugely reduce the number of vertices.
+For example, the bunny scene which contains a Stanford bunny model has 14904 vertices loaded from b72 files. After indexing, it is reduced to 2503 unique vertices. Using the index buffer improved the average rendering time from 0.04334s to 0.02531s, i.e. frame rate increases from 2769 fps to 4740 fps. 
+Here's the frame time over all frames rendered in bunny scene with and without index buffer.
+<br>
+<img src="perf_index_buffer_bn_ft_headless.png" alt="Performance graph for index buffer" width="500" height="350">
+<br>
+
+However, the performance decreases when I tested in Articulation scene. Although after indexing, the number of vertices is reduced from 12726 to 2123, the average rendering time increases from 0.03222s to 0.03499s. This is probably becauses the index buffer computation on CPU is time-consuming and Articulation scene has much more objects than the bunny scene (only one, the bunny). This makes index buffer more expensive and less useful.
+Here's the frame time over all frames rendered in Articulation scene with and without index buffer.
+<br>
+<img src="perf_index_buffer_ar_ft_headless.png" alt="Performance graph for index buffer" width="500" height="350">
+<br>
+
+<h2>Feedback</h2>
+Writing the report and performing bottleneck tests are unexpectedly time-consuming. Please consider this when deciding deadlines for next assignment. :(
+
+</body>
+</html>

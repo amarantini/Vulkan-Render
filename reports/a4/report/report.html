@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15-472-s24: A3 - Lights</title>
+<style>
+/* feel free to style your report in a fancier way! */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;700&Anonymous+Pro&display=swap');
+
+html {
+	background:#505055;
+}
+
+body {
+	font-family: 'Quicksand', sans-serif;
+	color:#000;
+	background:#eeeee8;
+	font-size:15px;
+	margin: 1em auto 50vh auto;
+	padding: 1em 2em 1em 2em;
+	max-width:45em;
+	border-radius:4px;
+	box-shadow:0 0 10px #0008;
+}
+
+h1 { font-size: 20px; font-weight: 700; }
+h2 { font-size: 16px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 400; }
+h4 { font-size: 14px; font-weight: 400; }
+
+h1, h2, h3, h4 {
+	margin: 15px 0 0 -10px;
+}
+
+p {
+	margin: 5px 0 0 0;
+}
+
+.subtitle {
+	display:block;
+	font-size:16px;
+	font-weight:400;
+}
+
+.placeholder {
+	color:#800;
+	font-style:italic;
+}
+
+kbd {
+	display:inline-block;
+	background:#ccc;
+	color:#444;
+	font-style:normal;
+	font-weight:700;
+	border-radius:8px;
+	padding:1px 6px;
+	margin:1px;
+	border:1.5px solid #aaa;
+}
+
+code {
+	font-family: 'Anonymous Pro', monospace;
+	background: #222;
+	color:#fff;
+	border-radius:4px;
+	padding:2px 4px;
+	margin:1px;
+}
+
+code var {
+	color:#ef5;
+	font-style:italic;
+}
+
+.atag {
+	font-family: 'Calistoga', serif;
+	font-size:90%;
+	color:#000;
+	background:#b00;
+
+	display:inline-block;
+	padding:1px 4px;
+	border-radius: 4px;
+	line-height:120%;
+}
+.atag:before {
+	content:'»';
+}
+.atag.extra {
+	background:#b08;
+}
+.atag.creative {
+	/* thanks, shout.horse! */
+	background:linear-gradient(0.4turn, #ffe680, #916f6f);
+}
+
+</style>
+</head>
+<body>
+<h1>A4: SSAO
+<span class="subtitle">by <span >Qiru Hu (qiruh)</span></span>
+</h1>
+I implement deferred shading and SSAO in this project. I store position, normal, albedo, roughness and metalness in G-Buffer in the first pass. Then calculate screenspace ambient occlusion and its blur in the second and third pass. In the final render pass, I calculate the lighting by sampling from G-Buffer and apply ambient occlusion. 
+
+
+<h2>My Scene <span class="atag creative">A3-create</span></h2>
+I created a scene that consist of a disco ball with 5 spot lights of different colors, a standing microphone, a guitar and a drum set.
+
+<br>
+Here's the ssao of the scene.
+<br>
+<img src="a4_ssao.png" width="500" height="300">
+<br>
+Here's a video of the scene. To show the SSAO more clearly, I squared the ambient occlusion.
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="a4.mov" type="video/mp4">
+</video>
+
+
+<br>
+Sources of textures and models:
+<ul>
+    <li>Disco ball: https://www.turbosquid.com/3d-models/disco-ball-1408606</li>
+    <li>Floor/wall texture: https://www.freepik.com/free-vector/coloured-abstract-background-design_913543.htm</li>
+	<li>Standing microphone: https://free3d.com/3d-model/microphone-772636.html</li>
+	<li>Drum set: https://free3d.com/3d-model/black-jack-drum-529078.html</li>
+	<li>Guitar: https://free3d.com/3d-model/gibson-es-335-816888.html</li>
+</ul>
+
+<h2>My Code</h2>
+
+<h3>G-Buffer pass </h3> 
+In G-Buffer pass, I draw all models, store their world space position, world space normal, albedo, roughness and metalness in color attachments. For lambertian material, I simply give a default roughness and metalness. The code for G-Buffer pass shader is in src/shaders/gbuffer.shader.frag and src/shaders/gbuffer.shader.vert. All color attachments have the same width and height as the screen. When the screen is resized, I also recreate the color attachments and update the descriptorSets that reference those attachements.
+<br>
+When draw frames, I first do the G-Buffer pass to acquire all information required for screen space rendering. Then I use the G-Buffer data to compute SSAO and lighting. In the final lighting pass, instead of getting position and normal from model vertices, it directly sample the position and normal maps and other G-Buffer maps to compute lighting.
+<br>
+To demonstrate the G-Buffer, I use a scene with a pbr sphere and a lambertian plane.
+<br>
+Here's the position.
+<br>
+<img src="position.png" width="500" height="300">
+<br>
+Here's the normal.
+<br>
+<img src="normal.png" width="500" height="300">
+<br>
+Here's the albedo.
+<br>
+<img src="albedo.png" width="500" height="300">
+<br>
+Here's the roughness.
+<br>
+<img src="roughness.png" width="500" height="300">
+<br>
+Here's the metalness.
+<br>
+<img src="metalness.png" width="500" height="300">
+
+<h3>SSAO </h3>
+I implement a normal-oriented hemisphere version of SSAO based on LearnOpenGL's tutorial (https://learnopengl.com/Advanced-Lighting/SSAO).
+The code for SSAO shader are in src/shaders/ssao.shader.vert and src/shaders/ssao.shader.frag.
+The SSAO pass takes a UniformBufferObject that contains a list of random sample positions in a normal-oriented hemisphere, a SSAO noise texture and the position map and normal map generated from the G-Buffer pass. 
+<br>
+The list of samples generated using C++'s random library. They are all within a hemisphere oriented around a normal of positive z direction. I multiply them by a scale to distribute more samples closer to the origin. 
+The SSAO noise texture consists of 4x4 random rotation vectors that oriented around the tangent-space surface normal. They are saved as a texture and tiled over the screen such that I can randomly rotate the samples at any place over the screen. 
+<br>
+Since my position and normal map are in world space, I first convert the sampled position and normal to view space by multiplying with the view matrix. Then I sample a noise vector and create a TBN matrix that rotate the sample and convert it from tangent space to view space. Then I obtain the stored depth value of the sample position and compare it to the current depth to determine if there is occlusion. I als apply a range check to make sure that only depth value within a radius around the fragment can contribute to the occlusion. I store the ambient occlusion in a color attachment of format VK_FORMAT_R8_UNORM.
+<br>
+I also pass the result of ambient occlusion through a blur pass to smooth it. The blur shader is defined in src/shaders/ssao.blur.shader.frag and src/shaders/ssao.blur.shader.vert. It simply use a 4x4 filter, the same size as the noise text to get an average of the occlusion at each texel.
+<br>
+Finally, I pass the blurred ssao image to the final lighting pass which is the previous pbr shader. It then sample the ssao and multiply the environment lighting by the ambient occlusion factor.
+<br>
+Here's a scene with a pbr sphere and 3 lambertian planes rendered with SSAO.
+<br>
+<img src="wssao_64.png" width="500" height="300">
+<br>
+Here's the same scene without SSAO.
+<img src="wossao.png" width="500" height="300">
+<br>
+Here's a scene with only SSAO.
+<img src="ssao_64.png" width="500" height="300">
+<br>
+
+<h3>Performance Analysis <span class="atag">A3-shadows</span></h3>
+
+I compare the quality and rendering time for SSAO with different number of samples in the same scene as above.
+<br>
+Here's the ssao with 64 samples.
+<br>
+<img src="ssao_64.png" width="500" height="300">
+<br>
+Here's the ssao with 32 samples.
+<br>
+<img src="ssao_32.png" width="500" height="300">
+<br>
+Here's the ssao with 16 samples.
+<br>
+<img src="ssao_16.png" width="500" height="300">
+<br>
+Here's the ssao with 8 samples.
+<br>
+<img src="ssao_8.png" width="500" height="300">
+<br> 
+I observe that as number of samples decrease, the quality of the ambient occlusion deteriorate with the edge become fuzzier. 
+<br>
+I then render the scene in headless mode for 120 frames and run for 100 iterations. 
+Here's the plot of the total rendering time with 8, 16, 32, 64 SSAO samples. The total rendering time increase as the number of SSAO samples increase. 
+<br>
+<img src="perf_ssao.png" width="500" height="300">
+
+
+<h2>Feedback</h2>
+Unfortunately, I spent too much time on debugging SSAO and do not have enough time to work on SSDO. I still learned a lot from this project. It is an wonderful experience.
+
+</body>
+</html>

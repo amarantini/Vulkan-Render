@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>15-472-s24: A3 - Lights</title>
+<style>
+/* feel free to style your report in a fancier way! */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;700&Anonymous+Pro&display=swap');
+
+html {
+	background:#505055;
+}
+
+body {
+	font-family: 'Quicksand', sans-serif;
+	color:#000;
+	background:#eeeee8;
+	font-size:15px;
+	margin: 1em auto 50vh auto;
+	padding: 1em 2em 1em 2em;
+	max-width:45em;
+	border-radius:4px;
+	box-shadow:0 0 10px #0008;
+}
+
+h1 { font-size: 20px; font-weight: 700; }
+h2 { font-size: 16px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 400; }
+h4 { font-size: 14px; font-weight: 400; }
+
+h1, h2, h3, h4 {
+	margin: 15px 0 0 -10px;
+}
+
+p {
+	margin: 5px 0 0 0;
+}
+
+.subtitle {
+	display:block;
+	font-size:16px;
+	font-weight:400;
+}
+
+.placeholder {
+	color:#800;
+	font-style:italic;
+}
+
+kbd {
+	display:inline-block;
+	background:#ccc;
+	color:#444;
+	font-style:normal;
+	font-weight:700;
+	border-radius:8px;
+	padding:1px 6px;
+	margin:1px;
+	border:1.5px solid #aaa;
+}
+
+code {
+	font-family: 'Anonymous Pro', monospace;
+	background: #222;
+	color:#fff;
+	border-radius:4px;
+	padding:2px 4px;
+	margin:1px;
+}
+
+code var {
+	color:#ef5;
+	font-style:italic;
+}
+
+.atag {
+	font-family: 'Calistoga', serif;
+	font-size:90%;
+	color:#000;
+	background:#b00;
+
+	display:inline-block;
+	padding:1px 4px;
+	border-radius: 4px;
+	line-height:120%;
+}
+.atag:before {
+	content:'»';
+}
+.atag.extra {
+	background:#b08;
+}
+.atag.creative {
+	/* thanks, shout.horse! */
+	background:linear-gradient(0.4turn, #ffe680, #916f6f);
+}
+
+</style>
+</head>
+<body>
+<h1>A3: Lights
+<span class="subtitle">by <span >Qiru Hu (qiruh)</span></span>
+</h1>
+I store light information in array of light structs of their specific light type. I pass the light to shader in a separate uniform buffer. For Lights with shadow map request, I render a depth map for each of the lights, and pass the shadow map to shader as array of texture2Ds. Then I use a shared sampler to sample from all the shadow map texture. This enables me to by-pass the max number of samplers constraint imposed by Vulkan/OpenGL and also enables me to pass in shadow map of different size. 
+
+
+<h2>My Lit Scene <span class="atag creative">A3-create</span></h2>
+I created a scene with a disco ball (a free 3D model downloaded from turbosquid). The disco ball is made up of many thin cubes. I placed 5 spot lights of different colors inside the disco ball so that they cast shadows of specific patterns through the gap between thin cubes. The lights shared the same transform as the ball so they move together.
+
+<br>
+<video width="500" height="350" controls autoplay>
+    <source src="discoball.mov" type="video/mp4">
+</video>
+
+
+<br>
+Sources of textures and models:
+<ul>
+    <li>Disco ball: https://www.turbosquid.com/3d-models/disco-ball-1408606</li>
+    <li>Floor/wall texture: https://www.freepik.com/free-vector/coloured-abstract-background-design_913543.htm</li>
+</ul>
+
+<h2>My Code</h2>
+
+<h3>Loading light objects <span class="atag">A3-load</span></h3> 
+
+I implement 3 new light types in src/include/scene/light.h.
+<br>
+The sphere light has the following members:
+<ul>
+    <li>vec4 pos: position of light in world space</li>
+    <li>vec4 color: which is the result of tint * power</li>
+    <li>vec4 others: radius, limit, *, *. Limit is set to -1 by default to indicate there is no limit. </li>
+	<li>vec4 shadow: shadow_res, shadow map index, *, *. Shadow_res is the length of shadow map. Shadow map index is used to access the corresponding shadow map textureCube in shader.</li>
+</ul>
+The soit light has the following members:
+<ul>
+    <li>mat4 lightVP: a transformation matrix that transform a world coordinate to light space. It is the result of light's proj * view.</li>
+    <li>vec4 pos: position of light in world space</li>
+    <li>vec4 direction: light direction in world space</li>
+    <li>vec4 color: which is the result of tint * power</li>
+    <li>vec4 others: radius, limit, outter, inner. Outter is equal to fov/2. Inner is equal to fov*(1-blend)/2 </li>
+    <li>vec4 shadow: shadow_res, shadow map index, *, *. Shadow_res is the length of shadow map. Shadow map index is used to access the corresponding shadow map texture2D in shader.</li>
+</ul>
+The sun light has the following members:
+<ul>
+    <li>vec4 direction: direction of light in world space</li>
+    <li>vec4 color: which is the result of tint * power</li>
+    <li>vec4 others: angle, *, *, * </li>
+</ul>
+The above light info structs are stored in arrays and passed into the shader. To make the data structure more compact and also follows OpenGL's memory alignment requirement, I store all the data in either vec4 or mat4.
+<br> 
+These light infos are contained in a generic Light struct which also contains a shared pointer to Transform. This enables the renderer to update the position, direction and lightVP matrix in real time and shows the movement of lights.
+<br>
+All light infos and their generic Light struct are stored in a LightInfoList struct when loaded from s72 in src/include/scene/scene.h. They are categorized into their respective light types. The LightInfoList is then passed to the Vulkan app. 
+
+
+<h3>Adding Direct Lighting to Materials <span class="atag">A3-materials</span></h3>
+
+I pass light infos to the fragment shader using a separate light-specific uniform buffer defined in src/include/vertex.hpp. It contains 3 arrays for each light type of a fixed size. It also contains 3 uint32_t to indicate the actual number of lights in the scene.
+I add an extra vec4 padding to enable 16-bytes memory alignment.
+<br>
+<code>
+struct UniformBufferObjectLight {<br>
+    alignas(4) uint32_t spotLightCount;<br>
+    alignas(4) uint32_t sphereLightCount;<br>
+    alignas(4) uint32_t directionalLightCount;<br>
+    alignas(4) uint32_t padding;<br>
+    alignas(16) SphereLight sphereLights[MAX_LIGHT_COUNT];<br>
+    alignas(16) SpotLight spotLights[MAX_LIGHT_COUNT];<br>
+    alignas(16) DirectionalLight directionalLights[MAX_LIGHT_COUNT];<br>
+};
+</code>
+<br>
+For lambertian material, I calculate the lights as point lights. For pbr material, I calculate the closest point using function <code>calculateClosestPoint</code> in src/shaders/common.glsl, and then estimate the interal amount of light with the closest point. I also applied sphere normalization. 
+<br>
+Notice: I scale down irradiance from environment map and increase the light strength/power to show the light more clearly.
+<br>
+Here's a scene with a pbr sphere on the left, a lambertian sphere on the right and a sphere light located in the center above the sphere and looking downwards.
+<img src="sphere.png" width="500" height="300">
+<br>
+Here's a scene with a pbr sphere on the right, a lambertian sphere on the left, a blue spot light located in the center above the sphere and a yellow spot light located in the bottom left corner of the scene, both looking downwards.
+<img src="spot1024.png" width="500" height="300">
+<br>
+Here's a scene with a pbr sphere on the left, a lambertian sphere on the right and a sun light located in the center above the sphere and looking at an angle.
+<img src="sun.png" width="500" height="300">
+<br>
+To test the performance impact of adding additional lights to a scene, I use the scene with both pbr and lambertian sphere and add sun light, spot light and sphere light. No light has shadow map. I render the scene for 120 frames and run for 100 iterations in headless mode. Then I compare the total rendering time for doubling the count of the lights (for each light type).
+<br>
+Here's the plot of the total rendering time with 3, 6, 12, 24 lights in the scene. The total rendering time increase as the number of lights increase, though not perfectly linearly. This is acceptable as the system performance vary from time to time. 
+<br>
+<img src="perf_light_counts.png" width="500" height="300">
+<br>
+Based on the graph, it seems that the viewer is capable of handling over thousands of lights and achive over 100 frames per second.
+
+<h3>Adding Shadows for Spot Lights <span class="atag">A3-shadows</span></h3>
+
+I create a pipeline for rendering depth map. Its vertex shader module is defined in src/shaders/depth.shader.vert. Since it does not render anything to screen, it does not need a fragment shader. The depth vertex shader takes in the vertex position as input, and use the model matrix to convert position to world space and the lightVP matrix to convert world space coordinate to light space. The model and lightVP are passed in as push constants since I need to update lightVP for each light in one render command recording process.
+<br>
+Before rendering the actual scene, I add a number of passes to render shadow map. For each shadow map render pass, I bind the depth map rendering pipeline, update lightVP matrix in push constant for the current light and generate a depth map to framebuffer and use subpass to write the depth map to a depth stencil attachment. Then in the actual rendering pass, I pass the image views of these shadow maps as texture2D to the shader and pass a shared sampler to the shader to sample from all shadow maps. The shadow map array has a fixed size. This corresponds with the size of the light array in the light uniform buffer object.
+<br>
+In shader code (src/shaders/lamber.shader.frag, src/shaders/pbr.shader.frag), I add a calculateShadow() function to calculate the percentage of shadows, and I multiply the radiance from the light with (1.0 - shadow) to get the actual amount of light. 
+<br>
+To avoid shadow map artifacts, I enable cull front face and set depth bias for the vulkan pipeline.
+<br>
+I use a range variable to determine the number of PCF samples. During shadow calculate, I sample positions in the range of [coord-range*texelSize, coord+range*texelSize] from the shadow map. So in total, I take (range*2+1)*(range*2+1) samples. Currently, range is set to 2. So my shader takes 25 PCF samples. The eventual shadow is the average of all samples. So each sample is weighted equally.
+<br>
+Here's an image that shows the shadow for both pbr and lambertian materials. Both light has shadow resolution 1024.
+<br>
+<img src="spot1024.png" width="500" height="300">
+<br>
+Here's the image for the same scene when shadow map is changed to 2048.
+<br>
+<img src="spot2048.png" width="500" height="300">
+<br>
+Here's the image for the same scene when shadow map is changed to 512.
+<br>
+<img src="spot512.png" width="500" height="300">
+<br>
+
+To test the performance impact of adding additional lights with shadow map to a scene, I use the scene with both pbr and lambertian sphere again and but only contains spot lights. All spot lights have shadow resolution 1024. I render the scene for 120 frames and run for 100 iterations in headless mode. Then I compare the total rendering time for doubling the count of the lights.
+<br>
+Here's the plot of the total rendering time with 1, 2, 4, 8 spot lights in the scene. The shadow map are rendered per frame. The total rendering time increase as the number of lights increase. 
+<br>
+<img src="perf_shadow_map_per_frame.png" width="500" height="300">
+<br>
+Here's the plot of the total rendering time with 1, 2, 4, 8 spot lights in the scene with the shadow map pre-rendered. The total rendering time also increase as the number of lights increase. But the overal rendering time is smaller than shadow map rendered per-frame.
+<br>
+<img src="perf_shadow_map_pre.png" width="500" height="300">
+
+
+
+<h3>Extra: Light Sort <span class="atag extra">A3x-sort</span></h3>
+
+<p class="placeholder">
+Cover, at least:
+your chosen method for sorting lights to meshes.
+</p>
+<p class="placeholder">
+Build a scene in which your light sorting technique provides a performance improvement over rendering all meshes with all lights.
+Include a screen shot (and the scene itself).
+</p>
+<p class="placeholder">
+Include data demonstrating the performance improvement in rendering this scene.
+E.g., a graph of the frame times for an animated fly-through of the scene with and without your sorting code enabled.
+</p>
+
+<h3>Extra: PCSS Soft Shadows <span class="atag extra">A3x-soft</span></h3>
+
+<p class="placeholder">
+Cover, at least:
+your implementation of PCSS (sampling pattern, counts)
+</p>
+
+<p class="placeholder">
+Include images showing the same shadows rendered with and without PCSS, showing the spreading behavior as the shadow stretches further from the light.
+</p>
+
+
+<h3>Extra: Shadows for Sun Lights <span class="atag extra">A3x-cascade</span></h3>
+
+<p class="placeholder">
+Cover, at least:
+your choice of shadow map cascade levels and layout;
+how your cascade is packed into a texture;
+how [if at all] your cascade avoids "boiling" as the camera moves
+</p>
+
+<p class="placeholder">
+Include images showing a scene rendered with a shadow-casting distant directional light.
+Include images with a modified shader color-coding pixels by what cascade level they are sampling.
+Include images from a debug camera, showing how the shadow map cascade fits the camera frustum.
+</p>
+
+
+<h3>Extra: Shadows for Sphere Lights <span class="atag extra">A3x-cube</span></h3>
+
+To render shadow map for sphere lights, I set up a render pass for rendering a cubemap. The render pass save the output to a layered image with 6 layers, where each layer is connected with a frame buffer and an image view. Each of them will store one face of the cubemap. I invoke rendering 6 times for each sphere light, with different view matrices looking at different directions of the cube. I store all light matrixes and light infos as arrays in a uniform buffer and store the index to retrieve information from arrays in a push constant.
+The shader module for rendering each face of the cubemap is defined in src/shaders/depth.cube.shader.vert and src/shaders/depth.cube.shader.frag. The depth is calculated in src/shaders/depth.cube.shader.frag as the length of the light to fragment vector (a float as the cubemap image has format VK_FORMAT_R32_SFLOAT). 
+<br>
+I pass the shadow cubemap as array of textureCube to the material shaders and use a shared sampler to sample the cubemap. I calculate the light to fragment vector in light space, use the vector to sample from shadow map, and perform PCF in 3 axes. The calculation of sphere light shadow is done in function <code>calculateShadowCube</code>
+<br>
+Here's the image for a scene with sphere light and shadow map.
+<br>
+<img src="sphere_shadow.png" width="500" height="300">
+
+
+
+<h3>Extra: Other <span class="atag extra">A3x-*</span></h3>
+
+<p class="placeholder">
+If you have recieved instructor permission to pursue another extra credit activity, include information about that activity here.
+</p>
+
+
+
+
+<h2>Feedback</h2>
+Thanks for giving us enough time!
+
+</body>
+</html>
