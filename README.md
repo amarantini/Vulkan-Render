@@ -1,5 +1,5 @@
 # Vulkan-Render
-This is a Vulkan render built using C++ with a JavaScript compiler. It supports loading scene, moving the camera and rendering meshes with various materials including PBR.
+This is a Vulkan render built using C++ with a JavaScript compiler. It supports loading scene, moving the camera and rendering meshes with various materials including PBR. 
 
 ### Compile and run
 To compile the Scene Viewer, run "node Maekfile.js" from the root directory. The executable is compiled into /bin folder.
